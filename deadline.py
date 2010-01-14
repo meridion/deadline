@@ -1,8 +1,23 @@
 # Deadline the #UvA IRC Bot
 
+import os
+
+# Verify we are not on Windows (NTKRN)
+if os.name == 'nt':
+	print """Sorry, Deadline is not supported on Windows
+due to their implementation of the POSIX select() function"""
+	exit(1)
+
+# Import all required stuff
+import sys
+from errno import EINTR
 import locale
-import curses
+import curses, curses.ascii
 from curses.wrapper import wrapper as launch_ncurses_app
+import select
+
+# Global settings variables
+keep_running = True
 
 # Fetch the system locale settings, so ncurses can do its job correctly
 # UTF8 strings to be precise
@@ -12,19 +27,146 @@ code = locale.getpreferredencoding()
 
 # Das Entrypoint
 def main(stdscr):
-	stdscr.clear()
-	height, width = stdscr.getmaxyx()
-	curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_RED)
-	infobarcolor = curses.A_DIM | curses.color_pair(1);
-	for x in range(width):
-		stdscr.addch(0, x, ' ', infobarcolor)
-		stdscr.addch(height - 2, x, infobarcolor)
+	gui = DeadGUI(stdscr)
+	while keep_running:
+		try:
+			select.select([sys.stdin], [], [])
+		except select.error, e:
+			if e.args[0] == EINTR:
+				continue
+			else:
+				raise e
+		gui.inputEvent()
 
-	stdscr.addstr(0, width / 2 - 6, "Deadline v0.1", infobarcolor)
-	stdscr.addstr(height - 1, 0, " [Main]")
-	stdscr.move(height - 1, 8)
-	stdscr.refresh()
-	stdscr.getch()
+# The deadline ncurses interface is heavily based on the irssi chat client
+class DeadGUI(object):
+	def __init__(this, stdscr):
+		# Setup input handler
+		this.special = {
+			curses.KEY_RESIZE : this.resizeEvent,
+			curses.KEY_BACKSPACE : this.promptBackspace,
+			curses.ascii.DEL : this.promptBackspace,
+			curses.KEY_LEFT : this.promptLeft,
+			curses.KEY_RIGHT : this.promptRight,
+		}
+
+		# Setup prompt
+		this.prompt = "[Main]"
+		this.string = ""
+		this.position = 0
+		this.view = 0
+
+		# Initialize the display
+		this.stdscr = stdscr
+		this.stdscr.clear()
+		this.height, this.width = stdscr.getmaxyx()
+		curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_RED)
+		this.infobarcolor = curses.A_DIM | curses.color_pair(1);
+		this.redrawFromScratch()
+		this.stdscr.refresh()
+
+	def resizeEvent(this):
+		this.stdscr.clear()
+		this.height, this.width = stdscr.getmaxyx()
+		this.redrawFromScratch()
+		this.stdscr.refresh()
+
+	def redrawFromScratch(this):
+		for x in range(this.width):
+			this.stdscr.addch(0, x, ' ', this.infobarcolor)
+			this.stdscr.addch(this.height - 2, x, ' ', this.infobarcolor)
+
+		this.stdscr.addstr(0, this.width / 2 - 7, "Deadline v0.1",
+			this.infobarcolor)
+		this.promptFromScratch()
+
+	def inputEvent(this):
+		c = this.stdscr.getch()
+		try:
+			return this.special[c]()
+		except KeyError:
+			return this.promptInput(chr(c))
+
+	# Prompt functionality
+	def promptFromScratch(this):
+		this.stdscr.addstr(this.height - 1, 0, this.prompt)
+		this.stdscr.addstr(this.height - 1, len(this.prompt) + 1,
+			this.string[this.view:this.view + this.width -
+			len(this.prompt) - 1])
+		this.stdscr.move(this.height - 1, len(this.prompt) + 1 + this.position -
+			this.view)
+
+	def promptInput(this, x):
+		this.string += x;
+		this.position += 1;
+		if this.promptValidate():
+			this.promptFromScratch()
+		else:
+			# Put the character before the cursor, and the cursor in the new
+			# current position.
+			this.stdscr.addch(this.height - 1, len(this.prompt) +
+				this.position - this.view, x)
+			this.stdscr.move(this.height - 1, len(this.prompt) + 1 +
+				this.position - this.view)
+
+	def promptBackspace(this):
+		this.promptValidate()
+		if this.position != 0:
+			this.position -= 1
+			this.string = this.string[:this.position - 1] + \
+				this.string[this.position:]
+			if this.promptValidate:
+				this.promptFromScratch()
+			else:
+				stdscr.delch(height - 1, + length)
+				this.string = this.string[:-1]
+				stdscr.delch(this.height - 1, len(this.prompt) + 1 + this.position -
+					this.view, x)
+				stdscr.move(this.height - 1, len(this.prompt) + 1 + this.position -
+					this.view)
+
+	def promptLeft(this):
+		this.position += 1
+		if this.promptValidate():
+			this.promptFromScratch()
+		else:
+			stdscr.move(this.height - 1, len(this.prompt) + position - view)
+
+	def promptRight(this):
+		this.position -= 1
+		if this.promptValidate():
+			this.promptFromScratch()
+		else:
+			stdscr.move(this.height - 1, len(this.prompt) + position - view)
+
+	# Verify that the prompt is in a displayable state
+	# If it is not, fix it and return True, otherwise return False
+	def promptValidate(this):
+		return False
+
+# Simplify string input
+def ui_getstring(stdscr):
+	s = ""
+	len = 0
+	height, width = stdscr.getmaxyx()
+	while(True):
+		stdscr.move(height - 1, 8 + len)
+		x = stdscr.getch()
+		if x > 128:
+			if x == curses.KEY_BACKSPACE:
+				if len != 0:
+					len -= 1
+					stdscr.delch(height - 1, 8 + len)
+					stdscr.refresh()
+					s = s[:-1]
+			continue
+		x = chr(x)
+		if x == '\n':
+			return s
+		s += x
+		stdscr.addch(height - 1, 8 + len, x)
+		stdscr.refresh()
+		len += 1
 
 # Autoinitialize ncurses, and make sure we clean up if we crash (or exit)
 # This function calls main for us, with the main ncurses window as argument
