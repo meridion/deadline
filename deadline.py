@@ -104,6 +104,12 @@ class DeadGUI(object):
 		this.stdscr.addstr(this.height - 1, len(this.prompt) + 1,
 			this.string[this.view:this.view + this.width -
 			len(this.prompt) - 2])
+
+		# Fill with spaces if nothing is here
+		if this.position == len(this.string):
+			spacepos = len(this.prompt) + 1 + this.position - this.view
+			this.stdscr.addstr(this.height - 1, spacepos, ' ' * (this.width - 1 -
+				spacepos))
 		this.stdscr.move(this.height - 1, len(this.prompt) + 1 + this.position -
 			this.view)
 
