@@ -27,16 +27,23 @@ code = locale.getpreferredencoding()
 
 # Das Entrypoint
 def main(stdscr):
+	stdscr.nodelay(1)
 	gui = DeadGUI(stdscr)
 	while keep_running:
 		try:
 			select.select([sys.stdin], [], [])
 		except select.error, e:
 			if e.args[0] == EINTR:
+				# We might've been interrupted by a SIGWINCH
+				# signal, which means we need to resize our
+				# window
+				while gui.inputEvent():
+					pass
 				continue
 			else:
 				raise e
-		gui.inputEvent()
+		while gui.inputEvent():
+			pass
 
 # The deadline ncurses interface is heavily based on the irssi chat client
 class DeadGUI(object):
@@ -67,7 +74,7 @@ class DeadGUI(object):
 
 	def resizeEvent(this):
 		this.stdscr.clear()
-		this.height, this.width = stdscr.getmaxyx()
+		this.height, this.width = this.stdscr.getmaxyx()
 		this.redrawFromScratch()
 		this.stdscr.refresh()
 
@@ -82,10 +89,13 @@ class DeadGUI(object):
 
 	def inputEvent(this):
 		c = this.stdscr.getch()
+		if c == -1:
+			return False
 		try:
-			return this.special[c]()
+			this.special[c]()
 		except KeyError:
-			return this.promptInput(chr(c))
+			this.promptInput(chr(c))
+		return True
 
 	# Prompt functionality
 	def promptFromScratch(this):
@@ -97,7 +107,7 @@ class DeadGUI(object):
 			this.view)
 
 	def promptInput(this, x):
-		this.string += x;
+		this.string = this.string[:this.position] + x + this.string[this.position:]
 		this.position += 1;
 		if this.promptValidate():
 			this.promptFromScratch()
@@ -110,34 +120,35 @@ class DeadGUI(object):
 				this.position - this.view)
 
 	def promptBackspace(this):
-		this.promptValidate()
 		if this.position != 0:
-			this.position -= 1
 			this.string = this.string[:this.position - 1] + \
 				this.string[this.position:]
-			if this.promptValidate:
+			this.position -= 1
+			if this.promptValidate():
 				this.promptFromScratch()
 			else:
-				stdscr.delch(height - 1, + length)
-				this.string = this.string[:-1]
-				stdscr.delch(this.height - 1, len(this.prompt) + 1 + this.position -
-					this.view, x)
-				stdscr.move(this.height - 1, len(this.prompt) + 1 + this.position -
-					this.view)
+				this.stdscr.delch(this.height - 1, len(this.prompt) +
+					1 + this.position - this.view)
+				this.stdscr.move(this.height - 1, len(this.prompt) +
+					1 + this.position - this.view)
 
 	def promptLeft(this):
-		this.position += 1
-		if this.promptValidate():
-			this.promptFromScratch()
-		else:
-			stdscr.move(this.height - 1, len(this.prompt) + position - view)
+		if this.position != 0:
+			this.position -= 1
+			if this.promptValidate():
+				this.promptFromScratch()
+			else:
+				this.stdscr.move(this.height - 1, len(this.prompt) + 1 +
+					this.position - this.view)
 
 	def promptRight(this):
-		this.position -= 1
-		if this.promptValidate():
-			this.promptFromScratch()
-		else:
-			stdscr.move(this.height - 1, len(this.prompt) + position - view)
+		if this.position != len(this.string):
+			this.position += 1
+			if this.promptValidate():
+				this.promptFromScratch()
+			else:
+				this.stdscr.move(this.height - 1, len(this.prompt) + 1 +
+					this.position - this.view)
 
 	# Verify that the prompt is in a displayable state
 	# If it is not, fix it and return True, otherwise return False
