@@ -75,6 +75,7 @@ class DeadGUI(object):
 	def resizeEvent(this):
 		this.stdscr.clear()
 		this.height, this.width = this.stdscr.getmaxyx()
+		this.promptValidate()
 		this.redrawFromScratch()
 		this.stdscr.refresh()
 
@@ -102,19 +103,20 @@ class DeadGUI(object):
 		this.stdscr.addstr(this.height - 1, 0, this.prompt)
 		this.stdscr.addstr(this.height - 1, len(this.prompt) + 1,
 			this.string[this.view:this.view + this.width -
-			len(this.prompt) - 1])
+			len(this.prompt) - 2])
 		this.stdscr.move(this.height - 1, len(this.prompt) + 1 + this.position -
 			this.view)
 
 	def promptInput(this, x):
-		this.string = this.string[:this.position] + x + this.string[this.position:]
+		this.string = this.string[:this.position] + x + \
+			this.string[this.position:]
 		this.position += 1;
 		if this.promptValidate():
 			this.promptFromScratch()
 		else:
 			# Put the character before the cursor, and the cursor in the new
 			# current position.
-			this.stdscr.addch(this.height - 1, len(this.prompt) +
+			this.stdscr.insch(this.height - 1, len(this.prompt) +
 				this.position - this.view, x)
 			this.stdscr.move(this.height - 1, len(this.prompt) + 1 +
 				this.position - this.view)
@@ -153,31 +155,22 @@ class DeadGUI(object):
 	# Verify that the prompt is in a displayable state
 	# If it is not, fix it and return True, otherwise return False
 	def promptValidate(this):
-		return False
+		# If we scroll too much to left (or backspace)
+		# We need the terminal to scroll the text
+		# View defines how much our text is scrolled
+		if this.position - this.view < 0:
+			this.view = this.view - this.width / 4
+			if this.view < 0:
+				this.view = 0
+			return True
 
-# Simplify string input
-def ui_getstring(stdscr):
-	s = ""
-	len = 0
-	height, width = stdscr.getmaxyx()
-	while(True):
-		stdscr.move(height - 1, 8 + len)
-		x = stdscr.getch()
-		if x > 128:
-			if x == curses.KEY_BACKSPACE:
-				if len != 0:
-					len -= 1
-					stdscr.delch(height - 1, 8 + len)
-					stdscr.refresh()
-					s = s[:-1]
-			continue
-		x = chr(x)
-		if x == '\n':
-			return s
-		s += x
-		stdscr.addch(height - 1, 8 + len, x)
-		stdscr.refresh()
-		len += 1
+		# Same but now for to the right
+		if this.position - this.view > this.width - 2 - len(this.prompt):
+			this.view = this.view + this.width / 4
+			if this.view > this.position:
+				this.view = this.position
+			return True
+		return False
 
 # Autoinitialize ncurses, and make sure we clean up if we crash (or exit)
 # This function calls main for us, with the main ncurses window as argument
