@@ -29,7 +29,11 @@ code = locale.getpreferredencoding()
 
 # Das Entrypoint
 def main():
+	mainwin = gui.getMainWindow()
+	mainwin.setTitle("Deadline v0.1")
+	mainwin.setTitleAlignment(TITLE_MODE_CENTERED)
 	gui.show()
+
 	while keep_running:
 		try:
 			select.select([sys.stdin], [], [])
@@ -68,12 +72,15 @@ class DeadGUI(object):
 		return True
 
 	def hide(self):
+		if not self.visible:
+			return False
 		self.stdscr.keypad(0)
 		curses.nocbreak()
 		curses.echo()
 		curses.endwin()
 		del self.stdscr
 		self.visible = False
+		return True
 
 	def getMainWindow(self):
 		return self.main
@@ -81,6 +88,7 @@ class DeadGUI(object):
 	def createWindow(self, name):
 		win = DeadWindow(name)
 		self.windows.append(win)
+		return win
 
 	def __ncurses_init__(self):
 		# Setup input handler
@@ -90,7 +98,7 @@ class DeadGUI(object):
 			curses.KEY_BACKSPACE : self.promptBackspace,
 			curses.ascii.DEL : self.promptBackspace,
 			curses.KEY_LEFT : self.promptLeft,
-			curses.KEY_RIGHT : self.promptRight,
+			curses.KEY_RIGHT : self.promptRight
 		}
 
 		# Setup prompt
@@ -103,7 +111,9 @@ class DeadGUI(object):
 		self.stdscr.clear()
 		self.height, self.width = self.stdscr.getmaxyx()
 		curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_RED)
-		self.infobarcolor = curses.A_DIM | curses.color_pair(1);
+		curses.init_pair(2, curses.COLOR_MAGENTA, curses.COLOR_RED)
+		self.infobarcolor = curses.A_DIM | curses.color_pair(1)
+		self.infohookcolor = curses.A_DIM | curses.color_pair(2)
 		self.redrawFromScratch()
 		self.stdscr.refresh()
 
@@ -227,6 +237,12 @@ class DeadWindow(object):
 		self.y, self.x = y, x
 		self.height, self.width = height, width
 
+	def setTitle(self, title):
+		self.title = title
+
+	def setTitleAlignment(self, alignment):
+		self.title_mode = alignment
+
 	def redrawFromScratch(self, gui):
 		self.drawTitle(gui)
 		self.drawMessageArea(gui)
@@ -239,9 +255,9 @@ class DeadWindow(object):
 		elif self.title_mode == TITLE_MODE_RIGHT:
 			str = (self.width - len(self.title)) * ' ' + self.title
 		else:
-			pos = width / 2 - len(self.title) / 2
+			pos = self.width / 2 - len(self.title) / 2
 			str = ' ' * pos + self.title + ' ' * \
-				(width - pos - len(self.title))
+				(self.width - pos - len(self.title))
 		gui.stdscr.addstr(self.y, self.x, str, gui.infobarcolor)
 
 	def drawMessageArea(self, gui):
@@ -249,8 +265,23 @@ class DeadWindow(object):
 
 	def drawInfo(self, gui):
 		# Infobar
-		gui.stdscr.addstr(self.y + self.height - 1, self.x,
-			' ' * self.width, gui.infobarcolor)
+		gui.stdscr.addch(self.y + self.height - 1, self.x,
+			' ', gui.infobarcolor)
+
+		# Clock
+		clock = localtime()
+		clockstr = "%(hour)02d:%(min)02d" % \
+			{"hour" : clock.tm_hour, "min" : clock.tm_min}
+		gui.stdscr.addch(self.y + self.height - 1, self.x + 1,
+			'[', gui.infohookcolor)
+		gui.stdscr.addstr(self.y + self.height - 1, self.x + 2,
+			clockstr, gui.infobarcolor)
+		gui.stdscr.addch(self.y + self.height - 1, self.x + 7,
+			']', gui.infohookcolor)
+
+		# Infobar
+		gui.stdscr.addstr(self.y + self.height - 1, self.x + 8,
+			' ' * (self.width - 8), gui.infobarcolor)
 
 DM_RAW, DM_NOTICE, DM_CHAT = range(3)
 
