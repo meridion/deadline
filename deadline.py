@@ -290,9 +290,21 @@ class DeadMessage(object):
 		self.timestamp = time()
 		self.type = type
 		self.content = content
+		self.prefix_length = 8
 
 	def getRenderSpec(self, width):
-		pass
+		"""
+Compute how many lines of text this message will take for the given width
+		"""
+		width -= self.prefix_length
+		last_space = 0
+		lines = 1
+		for i in range(len(self.content)):
+			if self.content[i] == " ":
+				last_space = i
+			if i % width == 0 and last_space % i != 0:
+				lines += 1
+		return lines
 
 gui = DeadGUI()
 try:
