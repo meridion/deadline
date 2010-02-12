@@ -112,8 +112,10 @@ class DeadGUI(object):
 		self.height, self.width = self.stdscr.getmaxyx()
 		curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_RED)
 		curses.init_pair(2, curses.COLOR_MAGENTA, curses.COLOR_RED)
+		curses.init_pair(3, curses.COLOR_YELLOW, curses.COLOR_BLACK)
 		self.infobarcolor = curses.A_DIM | curses.color_pair(1)
 		self.infohookcolor = curses.A_DIM | curses.color_pair(2)
+		self.noticecolor = curses.A_DIM | curses.color_pair(3)
 		self.redrawFromScratch()
 		self.stdscr.refresh()
 
@@ -290,21 +292,65 @@ class DeadMessage(object):
 		self.timestamp = time()
 		self.type = type
 		self.content = content
-		self.prefix_length = 8
+		self.prefix_length = 9
+
+	def breakString(self, text, width):
+		# Find first space
+		i = width - 1
+		while i >= 0 and text[i] != ' ':
+			i -= 1
+		if i == -1:
+			return text[:width], text[width:]
+		rest = text[i + 1:]
+		breakpoint = i
+
+		# Throw away trailing spaces
+		i -= 1
+		while i >= 0 and text[i] == ' ':
+			i -= 1
+		if i == -1:
+			broken = text[:breakpoint]
+		else:
+			broken = text[:i + 1]
+		return broken, rest
 
 	def getRenderSpec(self, width):
 		"""
 Compute how many lines of text this message will take for the given width
 		"""
 		width -= self.prefix_length
-		last_space = 0
+		str = self.content
 		lines = 1
-		for i in range(len(self.content)):
-			if self.content[i] == " ":
-				last_space = i
-			if i % width == 0 and last_space % i != 0:
-				lines += 1
+		while len(str) > width:
+			for i in range(width, -1, -1):
+				if str[i] == ' ':
+					break
+			str = str[i + 1:]
+			lines += 1
 		return lines
+
+	def render(self, gui, y, x, height, width, startline)
+		clock = localtime(self.timestamp)
+		clockstr = "%(hour)02d:%(min)02d" % \
+			{"hour" : clock.tm_hour, "min" : clock.tm_min}
+		gui.stdscr.addstr(y, x, clockstr)
+		if self.type == DM_NOTICE:
+			gui.stdscr.addstr(y, x + 6, '-- ', gui.noticecolor)
+		else:
+			gui.stdscr.addstr(y, x + 6, '** ')
+		x += self.prefix_length
+		width -= self.prefix_length
+		str = self.content
+		lines = 0
+		while len(str) > width:
+			for i in range(width, -1, -1):
+				if str[i] == ' ':
+					break
+			gui.stdscr.addstr(y + lines, x, str[:i + 1])
+			str = str[i + 1:]
+			lines += 1
+		gui.stdscr.addstr(y + lines, x, str)
+		return True
 
 gui = DeadGUI()
 try:
