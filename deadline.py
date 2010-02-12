@@ -56,7 +56,7 @@ class DeadGUI(object):
 		self.visible = False
 		self.stdscr = None
 		self.windows = []
-		self.main = self.createWindow("Main")
+		self.main_window = self.createWindow("Main")
 		self.current_window = 0
 
 	def show(self):
@@ -83,7 +83,7 @@ class DeadGUI(object):
 		return True
 
 	def getMainWindow(self):
-		return self.main
+		return self.main_window
 
 	def createWindow(self, name):
 		win = DeadWindow(name)
@@ -226,7 +226,7 @@ class DeadWindow(object):
 	def __init__(self, name = "IHaveNoName"):
 		self.messages = []
 		self.title = ""
-		self.title_mode = TITLE_MODE_RIGHT
+		self.title_mode = TITLE_MODE_LEFT
 		self.x, self.y, self.width, self.height = 0, 0, 0, 0
 		self.name = name
 
@@ -251,7 +251,7 @@ class DeadWindow(object):
 	def drawTitle(self, gui):
 		# Title bar
 		if self.title_mode == TITLE_MODE_LEFT:
-			str = self.title + (width - len(self.title)) * ' '
+			str = self.title + (self.width - len(self.title)) * ' '
 		elif self.title_mode == TITLE_MODE_RIGHT:
 			str = (self.width - len(self.title)) * ' ' + self.title
 		else:
@@ -290,6 +290,9 @@ class DeadMessage(object):
 		self.timestamp = time()
 		self.type = type
 		self.content = content
+
+	def getRenderSpec(self, width):
+		pass
 
 gui = DeadGUI()
 try:
