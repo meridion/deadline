@@ -318,38 +318,40 @@ class DeadMessage(object):
 		"""
 Compute how many lines of text this message will take for the given width
 		"""
-		width -= self.prefix_length
-		str = self.content
 		lines = 1
-		while len(str) > width:
-			for i in range(width, -1, -1):
-				if str[i] == ' ':
-					break
-			str = str[i + 1:]
+		prebreak = self.content
+		broken, rest = self.breakString(prebreak,
+			width - self.prefix_length)
+		while len(rest):
 			lines += 1
+			if len(broken) + len(rest) == len(prebreak):
+				prebreak = rest
+				rest, broken = self.breakString(prebreak, width)
+			else:
+				prebreak = rest
+				rest, broken = self.breakString(
+					prebreak, width - self.prefix_length)
 		return lines
 
-	def render(self, gui, y, x, height, width, startline)
-		clock = localtime(self.timestamp)
-		clockstr = "%(hour)02d:%(min)02d" % \
-			{"hour" : clock.tm_hour, "min" : clock.tm_min}
-		gui.stdscr.addstr(y, x, clockstr)
-		if self.type == DM_NOTICE:
-			gui.stdscr.addstr(y, x + 6, '-- ', gui.noticecolor)
-		else:
-			gui.stdscr.addstr(y, x + 6, '** ')
-		x += self.prefix_length
-		width -= self.prefix_length
-		str = self.content
-		lines = 0
-		while len(str) > width:
-			for i in range(width, -1, -1):
-				if str[i] == ' ':
-					break
-			gui.stdscr.addstr(y + lines, x, str[:i + 1])
-			str = str[i + 1:]
-			lines += 1
-		gui.stdscr.addstr(y + lines, x, str)
+	def render(self, gui, y, x, height, width, startline, endline)
+		prebreak = self.content
+		broken, rest = self.breakString(prebreak,
+			width - self.prefix_length)
+		if startline == 0:
+			clock = localtime(self.timestamp)
+			clockstr = "%(hour)02d:%(min)02d" % \
+				{"hour" : clock.tm_hour, "min" : clock.tm_min}
+			gui.stdscr.addstr(y, x, clockstr)
+			if self.type == DM_NOTICE:
+				gui.stdscr.addstr(y, x + 6, '-- ', gui.noticecolor)
+			else:
+				gui.stdscr.addstr(y, x + 6, '** ')
+			gui.stdscr.addstr(y, x + self.prefix_length, broken)
+		lines = 1
+		while len(rest):
+			if len(broken) + len(rest) == len(prebreak):
+				rest, broken = gui.stdscr
+				HEREBEDRAGONS
 		return True
 
 gui = DeadGUI()
