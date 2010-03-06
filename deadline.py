@@ -110,6 +110,8 @@ Go back to the normal terminal.
 			curses.KEY_ENTER : self.promptExecute,
 			curses.KEY_NEXT : self.promptRight,
 			curses.KEY_PREVIOUS : self.promptLeft,
+			ord(curses.ascii.ctrl('N')) : self.promptRight,
+			ord(curses.ascii.ctrl('P')) : self.promptLeft,
 
 			# Carriage return
 			13 : self.promptExecute
