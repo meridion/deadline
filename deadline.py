@@ -32,6 +32,10 @@ def main():
 	mainwin = gui.getMainWindow()
 	mainwin.setTitle("Deadline v0.1")
 	mainwin.setTitleAlignment(TITLE_MODE_CENTERED)
+	mainwin.addNotice("Welcome to Deadline v0.1")
+	mainwin.addNotice("You can type '/quit' to quit," +
+		" or type something else to simply see it" +
+		" show up in this window :-)")
 	gui.show()
 
 	while keep_running:
