@@ -21,13 +21,10 @@ import select
 keep_running = True
 gui_running = False
 
-debuglog = open("debug.log", "wt")
-
 # Fetch the system locale settings, so ncurses can do its job correctly
 # UTF8 strings to be precise
 # For more info see: http://docs.python.org/3.1/library/curses.html
 locale.setlocale(locale.LC_ALL, '')
-code = locale.getpreferredencoding()
 
 # Das Entrypoint
 def main():
@@ -149,7 +146,6 @@ Go back to the normal terminal.
 		c = self.stdscr.getch()
 		if c == -1:
 			return False
-		debuglog.write(str(c) + '\n')
 		try:
 			self.special[c]()
 		except KeyError:
@@ -417,7 +413,7 @@ Render a message object to the GUI
 				broken, rest = self.breakString(
 					prebreak, width - self.prefix_length)
 				if lines >= startline and lines < startline + height:
-					gui.stdscr.addstr(y, x + self.prefix_lengh, broken)
+					gui.stdscr.addstr(y, x + self.prefix_length, broken)
 					y += 1
 			lines += 1
 		return True
