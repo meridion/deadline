@@ -71,6 +71,7 @@ Show the deadline ncurses GUI.
 			return False
 		self.stdscr = curses.initscr()
 		curses.start_color()
+		curses.use_default_colors()
 		curses.noecho()
 		curses.cbreak()
 		curses.nonl()
@@ -576,5 +577,5 @@ try:
 	main()
 finally:
 	gui.hide()
-print "\nHave a nice day!"
+print "Have a nice day!"
 
