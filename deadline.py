@@ -104,9 +104,12 @@ Go back to the normal terminal.
 			curses.KEY_RESIZE : self.resizeEvent,
 			curses.KEY_BACKSPACE : self.promptBackspace,
 			curses.ascii.DEL : self.promptBackspace,
+			curses.KEY_DC : self.promptBackspace,
 			curses.KEY_LEFT : self.promptLeft,
 			curses.KEY_RIGHT : self.promptRight,
 			curses.KEY_ENTER : self.promptExecute,
+			curses.KEY_NEXT : self.promptRight,
+			curses.KEY_PREVIOUS : self.promptLeft,
 
 			# Carriage return
 			13 : self.promptExecute
@@ -427,7 +430,8 @@ Render a message object to the GUI
 class DeadEvent(object):
 	def __init__(self, delay):
 		self.delay = delay
-		self.eid = -1
+		self.neid = 0
+		self.eid_roof = 1024
 
 	def trigger(self):
 		"""
@@ -566,5 +570,5 @@ try:
 	main()
 finally:
 	gui.hide()
-print "Have a nice day!"
+print "\nHave a nice day!"
 
