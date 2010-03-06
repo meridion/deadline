@@ -21,6 +21,8 @@ import select
 keep_running = True
 gui_running = False
 
+debuglog = open("debug.log", "wt")
+
 # Fetch the system locale settings, so ncurses can do its job correctly
 # UTF8 strings to be precise
 # For more info see: http://docs.python.org/3.1/library/curses.html
@@ -60,18 +62,25 @@ class DeadGUI(object):
 		self.current_window = 0
 
 	def show(self):
+		"""
+Show the deadline ncurses GUI.
+		"""
 		if self.visible:
 			return False
 		self.stdscr = curses.initscr()
 		curses.start_color()
 		curses.noecho()
 		curses.cbreak()
+		curses.nonl()
 		self.stdscr.keypad(1)
 		self.visible = True
 		self.__ncurses_init__()
 		return True
 
 	def hide(self):
+		"""
+Go back to the normal terminal.
+		"""
 		if not self.visible:
 			return False
 		self.stdscr.keypad(0)
@@ -98,7 +107,11 @@ class DeadGUI(object):
 			curses.KEY_BACKSPACE : self.promptBackspace,
 			curses.ascii.DEL : self.promptBackspace,
 			curses.KEY_LEFT : self.promptLeft,
-			curses.KEY_RIGHT : self.promptRight
+			curses.KEY_RIGHT : self.promptRight,
+			curses.KEY_ENTER : self.promptExecute,
+
+			# Carriage return
+			13 : self.promptExecute
 		}
 
 		# Setup prompt
@@ -136,14 +149,20 @@ class DeadGUI(object):
 		c = self.stdscr.getch()
 		if c == -1:
 			return False
+		debuglog.write(str(c) + '\n')
 		try:
 			self.special[c]()
 		except KeyError:
 			self.promptInput(chr(c))
+		self.stdscr.refresh()
 		return True
 
 	# Prompt functionality
 	def promptFromScratch(self):
+		"""
+Redraws the prompt from scratch.
+		"""
+		# Draw prompt message
 		self.stdscr.addstr(self.height - 1, 0, self.prompt)
 		self.stdscr.addstr(self.height - 1, len(self.prompt) + 1,
 			self.string[self.view:self.view + self.width -
@@ -152,8 +171,10 @@ class DeadGUI(object):
 		# Fill with spaces if nothing is here
 		if self.position == len(self.string):
 			spacepos = len(self.prompt) + 1 + self.position - self.view
-			self.stdscr.addstr(self.height - 1, spacepos, ' ' * (self.width - 1 -
-				spacepos))
+			self.stdscr.addstr(self.height - 1, spacepos, ' ' *
+				(self.width - 1 - spacepos))
+
+		# Place cursor
 		self.stdscr.move(self.height - 1, len(self.prompt) + 1 + self.position -
 			self.view)
 
@@ -222,6 +243,22 @@ class DeadGUI(object):
 			return True
 		return False
 
+	def promptExecute(self):
+		"""
+Executes the command typed into the prompt.
+		"""
+		self.getMainWindow().addNotice(self.string)
+		self.promptClear()
+		self.redrawFromScratch()
+
+	def promptClear(self):
+		"""
+Clear the contents of the prompt.
+		"""
+		self.string = ""
+		self.position = 0
+		self.view = 0
+
 TITLE_MODE_CENTERED, TITLE_MODE_LEFT, TITLE_MODE_RIGHT = range(3)
 
 class DeadWindow(object):
@@ -263,7 +300,11 @@ class DeadWindow(object):
 		gui.stdscr.addstr(self.y, self.x, str, gui.infobarcolor)
 
 	def drawMessageArea(self, gui):
-		pass
+		y = self.y + 1
+		for message in self.messages:
+			h = message.getRenderSpec(self.width)
+			message.render(gui, y, self.x, h, self.width, 0)
+			y += h
 
 	def drawInfo(self, gui):
 		# Infobar
@@ -295,12 +336,25 @@ class DeadMessage(object):
 		self.prefix_length = 9
 
 	def breakString(self, text, width):
-		# Find first space
+		"""
+Function helper for building text wrappers.
+
+'text' should contain a string to be wrapped, and
+'width' should be the target width the textbox will be.
+
+The function shall return a tuple containing the string
+to be displayed and the remainder.
+		"""
+
+		if width > len(text):
+			return text, ""
+
+		# Find last space
 		i = width - 1
 		while i >= 0 and text[i] != ' ':
 			i -= 1
 		if i == -1:
-			return text[:width], text[width:]
+			return text[:width], text[width:].lstrip()
 		rest = text[i + 1:]
 		breakpoint = i
 
@@ -312,7 +366,7 @@ class DeadMessage(object):
 			broken = text[:breakpoint]
 		else:
 			broken = text[:i + 1]
-		return broken, rest
+		return broken, rest.lstrip()
 
 	def getRenderSpec(self, width):
 		"""
@@ -326,14 +380,17 @@ Compute how many lines of text this message will take for the given width
 			lines += 1
 			if len(broken) + len(rest) == len(prebreak):
 				prebreak = rest
-				rest, broken = self.breakString(prebreak, width)
+				broken, rest = self.breakString(prebreak, width)
 			else:
 				prebreak = rest
-				rest, broken = self.breakString(
+				broken, rest = self.breakString(
 					prebreak, width - self.prefix_length)
 		return lines
 
-	def render(self, gui, y, x, height, width, startline, endline)
+	def render(self, gui, y, x, height, width, startline):
+		"""
+Render a message object to the GUI
+		"""
 		prebreak = self.content
 		broken, rest = self.breakString(prebreak,
 			width - self.prefix_length)
@@ -350,8 +407,19 @@ Compute how many lines of text this message will take for the given width
 		lines = 1
 		while len(rest):
 			if len(broken) + len(rest) == len(prebreak):
-				rest, broken = gui.stdscr
-				HEREBEDRAGONS
+				prebreak = rest
+				broken, rest = self.breakString(prebreak, width)
+				if lines >= startline and lines < startline + height:
+					gui.stdscr.addstr(y, x, broken)
+					y += 1
+			else:
+				prebreak = rest
+				broken, rest = self.breakString(
+					prebreak, width - self.prefix_length)
+				if lines >= startline and lines < startline + height:
+					gui.stdscr.addstr(y, x + self.prefix_lengh, broken)
+					y += 1
+			lines += 1
 		return True
 
 gui = DeadGUI()
