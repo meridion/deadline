@@ -401,6 +401,7 @@ Render a message object to the GUI
 				gui.stdscr.addstr(y, x + 6, '** ')
 			gui.stdscr.addstr(y, x + self.prefix_length, broken)
 		lines = 1
+		y += 1
 		while len(rest):
 			if len(broken) + len(rest) == len(prebreak):
 				prebreak = rest
