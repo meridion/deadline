@@ -46,9 +46,7 @@ def main():
 				# We might've been interrupted by a SIGWINCH
 				# signal, which means we need to resize our
 				# window
-				while gui.inputEvent():
-					pass
-				continue
+				gui.stdscr.touchwin()
 			else:
 				raise e
 		while gui.inputEvent():
