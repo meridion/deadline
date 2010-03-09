@@ -32,12 +32,12 @@ If the event is triggered the function returns True
 
 class TestEvent(DeadEvent):
 	def __init__(self, call):
-		DeadEvent.__init__(1000)
+		DeadEvent.__init__(self, 1.0)
 		self.call = call
 
 	def trigger(self, eq):
 		self.call()
-		self.delay = 1000
+		self.delay = 1.0
 		eq.scheduleEvent(self)
 
 class DeadEventQueue(object):
@@ -54,7 +54,7 @@ Schedule an event for execution.
 The function shall return the event-code that can be used to cancel the event.
 		"""
 
-		eid = self.generateEID()
+		eid = self._generateEID()
 		event.setEID(eid)
 
 		# Since it is possible for events to be scheduled
@@ -62,7 +62,7 @@ The function shall return the event-code that can be used to cancel the event.
 		# (Events can re-schedule themselves upon triggering)
 		# we defer those calls until the elapse call is complete
 		if self.elapsing:
-			self.schedules.append(event)
+			self.scheds.append(event)
 			return eid
 
 		self._insertEvent(event)
@@ -93,16 +93,16 @@ Cancel an event as specified by it's EID
 		self.elapsing = False
 
 		# Insert events scheduled in the mean time
-		for e in scheds:
+		for e in self.scheds:
 			self._insertEvent(e)
 
-		for eid in cancels:
+		for eid in self.cancels:
 			self.cancelEvent(eid)
 
 		del self.cancels
 		del self.scheds
 
-	def nextEventTicks():
+	def nextEventTicks(self):
 		"""
 Returns the ticks remaining till the next event.
 		"""
@@ -123,7 +123,7 @@ This function returns nothing.
 			if d < self.events[i].getDelay():
 				self.insert(i, e)
 				return
-		self.append(e)
+		self.events.append(e)
 
 	def _generateEID(self):
 		"""
