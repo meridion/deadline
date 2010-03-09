@@ -3,10 +3,8 @@
 class DeadEvent(object):
 	def __init__(self, delay):
 		self.delay = delay
-		self.neid = 0
-		self.eid_roof = 1024
 
-	def trigger(self):
+	def trigger(self, eq):
 		"""
 Method called when event occurs.
 		"""
@@ -21,21 +19,32 @@ Method called when event occurs.
 	def getEID(self):
 		return self.eid
 
-	def elapseTime(self, time):
+	def elapseTime(self, time, eq):
 		"""
 Elapse 'time' units of time.
 If the event is triggered the function returns True
 		"""
 		self.delay -= time
 		if self.delay <= 0.0:
-			self.trigger()
+			self.trigger(eq)
 			return True
 		return False
+
+class TestEvent(DeadEvent):
+	def __init__(self, call):
+		DeadEvent.__init__(1000)
+		self.call = call
+
+	def trigger(self, eq):
+		self.call()
+		self.delay = 1000
+		eq.scheduleEvent(self)
 
 class DeadEventQueue(object):
 	def __init__(self):
 		self.events = []
-		self.eids = 0
+		self.neid = 0
+		self.eid_roof = 1024
 		self.elapsing = False
 
 	def scheduleEvent(self, event):
@@ -79,7 +88,8 @@ Cancel an event as specified by it's EID
 
 		# Do elapse
 		self.elapsing = True
-		self.events = filter(lambda e: not e.elapseTime(time), self.events)
+		self.events = filter(lambda e: not e.elapseTime(time, self),
+			self.events)
 		self.elapsing = False
 
 		# Insert events scheduled in the mean time
@@ -91,6 +101,14 @@ Cancel an event as specified by it's EID
 
 		del self.cancels
 		del self.scheds
+
+	def nextEventTicks():
+		"""
+Returns the ticks remaining till the next event.
+		"""
+		if len(self.events):
+			return self.events[0].getDelay()
+		return None
 
 	def _insertEvent(self, e):
 		"""

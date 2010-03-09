@@ -9,6 +9,7 @@ class DeadGUI(object):
 		self.visible = False
 		self.stdscr = None
 		self.windows = []
+		self.command = {}
 		self.main_window = self.createWindow("Main")
 		self.current_window = 0
 
@@ -105,6 +106,9 @@ Go back to the normal terminal.
 		w.setArea(0, 0, self.height - 1, self.width)
 		w.redrawFromScratch(self)
 		self.promptFromScratch()
+
+	def registerCommand(self, cmdname, func):
+		self.command[cmdname] = func
 
 	def inputEvent(self):
 		c = self.stdscr.getch()
@@ -207,13 +211,24 @@ Redraws the prompt from scratch.
 		"""
 Executes the command typed into the prompt.
 		"""
-		global keep_running
-
-		if self.string == "/quit":
-			keep_running = False
-		self.getMainWindow().addNotice(self.string)
-		self.promptClear()
-		self.redrawFromScratch()
+		if len(self.string):
+			if self.string[0] == '/' and len(self.string) > 1:
+				s = self.string.find(' ')
+				if s < 0:
+					cmd = self.string
+					args = None
+				else:
+					cmd = self.string[:s]
+					args = self.string[s + 1:].strip()
+				try:
+					self.command[cmd[1:]](args)
+				except KeyError:
+					self.getMainWindow(). \
+						addNotice("Unknown command '%s'" % cmd[1:])
+			else:
+				self.getMainWindow().addNotice(self.string)
+			self.promptClear()
+			self.redrawFromScratch()
 
 	def promptClear(self):
 		"""

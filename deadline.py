@@ -11,7 +11,6 @@ due to their implementation of the POSIX select() function"""
 # Import all required stuff
 from deadline import *
 import sys
-import locale
 from errno import EINTR
 import select
 
@@ -21,11 +20,16 @@ keep_running = True
 # Fetch the system locale settings, so ncurses can do its job correctly
 # UTF8 strings to be precise
 # For more info see: http://docs.python.org/3.1/library/curses.html
+import locale
 locale.setlocale(locale.LC_ALL, '')
 
 # Das Entrypoint
 def main():
-	global ircc
+	# Setup prompt commands
+	gui.registerCommand('quit', quitEvent)
+	gui.registerCommand('connect', connectEvent)
+
+	# Initialize main window
 	mainwin = gui.getMainWindow()
 	mainwin.setTitle("Deadline v0.1")
 	mainwin.setTitleAlignment(TITLE_MODE_CENTERED)
@@ -33,22 +37,16 @@ def main():
 	mainwin.addNotice("You can type '/quit' to quit," +
 		" or type something else to simply see it" +
 		" show up in this window :-)")
-
-	# Do debug connect to IRC Freenode
-	mainwin.addNotice("Looking up irc.freenode.net")
 	gui.show()
-	ircc = YeOldeIRCClient('irc.freenode.net')
-	ircs = ircc.getSocket()
-	mainwin.addNotice("Connecting to irc.freenode.net")
-	gui.redrawFromScratch()
 
 	while keep_running:
 		try:
-			if ircc.isConnected():
-				select.select([sys.stdin, ircs], [], [])
-			else:
-				select.select([sys.stdin], [ircs], [])
-				ircc.doConnect()
+			# if ircc.isConnected():
+			# 	select.select([sys.stdin, ircs], [], [])
+			# else:
+			# 	select.select([sys.stdin], [ircs], [])
+			# 	ircc.doConnect()
+			select.select([sys.stdin], [], [])
 		except select.error, e:
 			if e.args[0] == EINTR:
 				# We might've been interrupted by a SIGWINCH
@@ -60,14 +58,12 @@ def main():
 		while gui.inputEvent():
 			pass
 
-		# Lame ass loop for IRC Chat
-		while True:
-			ircc.handleSend()
-			x = ircc.recvCommand()
-			if x is None:
-				break
-			mainwin.addIncoming(x)
-		gui.redrawFromScratch()
+def quitEvent(str):
+	global keep_running
+	keep_running = False
+
+def connectEvent(server):
+	pass
 
 gui = DeadGUI()
 try:
