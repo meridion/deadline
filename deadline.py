@@ -17,6 +17,7 @@ from curses.wrapper import wrapper as launch_ncurses_app
 from time import time, localtime
 import select
 import socket
+import errno
 
 # Global settings variables
 keep_running = True
@@ -29,6 +30,7 @@ locale.setlocale(locale.LC_ALL, '')
 
 # Das Entrypoint
 def main():
+	global ircc
 	mainwin = gui.getMainWindow()
 	mainwin.setTitle("Deadline v0.1")
 	mainwin.setTitleAlignment(TITLE_MODE_CENTERED)
@@ -36,11 +38,22 @@ def main():
 	mainwin.addNotice("You can type '/quit' to quit," +
 		" or type something else to simply see it" +
 		" show up in this window :-)")
+
+	# Do debug connect to IRC Freenode
+	mainwin.addNotice("Looking up irc.freenode.net")
 	gui.show()
+	ircc = YeOldeIRCClient('irc.freenode.net')
+	ircs = ircc.getSocket()
+	mainwin.addNotice("Connecting to irc.freenode.net")
+	gui.redrawFromScratch()
 
 	while keep_running:
 		try:
-			select.select([sys.stdin], [], [])
+			if ircc.isConnected():
+				select.select([sys.stdin, ircs], [], [])
+			else:
+				select.select([sys.stdin], [ircs], [])
+				ircc.doConnect()
 		except select.error, e:
 			if e.args[0] == EINTR:
 				# We might've been interrupted by a SIGWINCH
@@ -51,6 +64,15 @@ def main():
 				raise e
 		while gui.inputEvent():
 			pass
+
+		# Lame ass loop for IRC Chat
+		while True:
+			ircc.handleSend()
+			x = ircc.recvCommand()
+			if x is None:
+				break
+			mainwin.addIncoming(x)
+		gui.redrawFromScratch()
 
 # The deadline ncurses interface is heavily based on the irssi chat client
 class DeadGUI(object):
@@ -132,9 +154,13 @@ Go back to the normal terminal.
 		curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_RED)
 		curses.init_pair(2, curses.COLOR_MAGENTA, curses.COLOR_RED)
 		curses.init_pair(3, curses.COLOR_YELLOW, -1)
+		curses.init_pair(4, curses.COLOR_BLUE, -1)
+		curses.init_pair(5, curses.COLOR_RED, -1)
 		self.infobarcolor = curses.A_DIM | curses.color_pair(1)
 		self.infohookcolor = curses.A_DIM | curses.color_pair(2)
 		self.noticecolor = curses.A_DIM | curses.color_pair(3)
+		self.incomingcolor = curses.A_DIM | curses.color_pair(4)
+		self.outgoingcolor = curses.A_DIM | curses.color_pair(5)
 		self.redrawFromScratch()
 		self.stdscr.refresh()
 
@@ -281,6 +307,12 @@ class DeadWindow(object):
 	def addNotice(self, notice):
 		self.messages.append(DeadMessage(DM_NOTICE, notice))
 
+	def addIncoming(self, notice):
+		self.messages.append(DeadMessage(DM_INCOMING, notice))
+
+	def addOutgoing(self, outgoing):
+		self.messages.append(DeadMessage(DM_OUTGOING, notice))
+
 	def setArea(self, y, x, height, width):
 		self.y, self.x = y, x
 		self.height, self.width = height, width
@@ -335,7 +367,7 @@ class DeadWindow(object):
 		gui.stdscr.addstr(self.y + self.height - 1, self.x + 8,
 			' ' * (self.width - 8), gui.infobarcolor)
 
-DM_RAW, DM_NOTICE, DM_CHAT = range(3)
+DM_RAW, DM_NOTICE, DM_CHAT, DM_INCOMING, DM_OUTGOING = range(5)
 
 class DeadMessage(object):
 	def __init__(self, type = DM_RAW, content = "You're code is bugged ;-)"):
@@ -410,6 +442,10 @@ Render a message object to the GUI
 			gui.stdscr.addstr(y, x, clockstr)
 			if self.type == DM_NOTICE:
 				gui.stdscr.addstr(y, x + 6, '-- ', gui.noticecolor)
+			elif self.type == DM_INCOMING:
+				gui.stdscr.addstr(y, x + 6, '>> ', gui.incomingcolor)
+			elif self.type == DM_OUTGOING:
+				gui.stdscr.addstr(y, x + 6, '<< ', gui.outgoingcolor)
 			else:
 				gui.stdscr.addstr(y, x + 6, '** ')
 			gui.stdscr.addstr(y, x + self.prefix_length, broken)
@@ -569,6 +605,89 @@ Internal function for generating EIDs.
 			eid = self.neid
 			self.neid += 1
 			return eid
+
+# Currently IPv4 only
+class YeOldeIRCClient(object):
+	def __init__(self, servername):
+		self.server = servername
+
+		# Connection settings
+		self.connected = False
+		self.ip = None
+		self.sock = None
+		self.doConnect()
+
+		# Transfer settings
+		self.sendbuf = ''
+		self.recvbuf = ''
+
+	def doConnect(self):
+		if self.connected:
+			return False
+		if self.ip is None:
+			self.ip = socket.gethostbyname(self.server)
+		if self.sock is None:
+			self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			self.sock.setblocking(0)
+		try:
+			if self.sock.connect((self.ip, 6667)) is None:
+				self.connected = True
+		except socket.error, e:
+			if e.errno != errno.EINPROGRESS:
+				raise e
+		return True
+
+	def isConnected(self):
+		self.handleRecv()
+		return self.connected
+
+	def getSocket(self):
+		return self.sock
+
+	def handleSend(self):
+		if not self.connected:
+			return False
+		if len(self.sendbuf):
+			try:
+				x = self.sock.send(self.sendbuf)
+				self.sendbuf = self.sendbuf[x:]
+				return True
+			except socket.error, e:
+				if e.errno != errno.EWOULDBLOCK:
+					raise e
+				return True
+		return False
+
+	def sendCommand(self, data):
+		self.sendbuf += data + "\r\n"
+		return self.handleSend()
+
+	def handleRecv(self):
+		if not self.connected:
+			return False
+		try:
+			x = self.sock.recv(4096)
+		except socket.error, e:
+			if e.errno != errno.EWOULDBLOCK:
+				raise e
+			return False
+		if not len(x):
+			self.sock.close()
+			del self.sock
+			self.sock = None
+			self.connected = False
+			return False
+		self.recvbuf += x
+		return True
+
+	def recvCommand(self):
+		self.handleRecv()
+		i = self.recvbuf.find('\r\n')
+		if i >= 0:
+			com = self.recvbuf[:i]
+			self.recvbuf = self.recvbuf[i + 2:]
+			return com
+		return None
 
 gui = DeadGUI()
 try:
