@@ -9,7 +9,7 @@ due to their implementation of the POSIX select() function"""
 	exit(1)
 
 # Import all required stuff
-from deadline import *
+from __init__ import *
 import sys
 from errno import EINTR
 from time import time, localtime
