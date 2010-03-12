@@ -1,0 +1,98 @@
+
+Deadline The #UvA IRC Bot.
+
+ - 1 Introduction
+
+Deadline is a simple modular bot written in the Python programming language,
+it is not meant to be used on a large scale, but time will tell were it will
+end up.
+
+One of the characterstics of deadline is its ncurses user interface which was
+boldy copied from the irssi IRC client. Deadline also supports the dynamic
+loading of components, and is completely based on non-blocking IO. At the time
+of writing the only blocking part is the host name lookup, but I think we will
+get that out too with not too much trouble.
+
+ - 2 Deadline User guide
+
+more to come
+
+ - 3 Deadline internals
+
+ - 3.1 The GUI
+
+The Deadline GUI is mainly contained within the file <deadline/gui.py>,
+it communicates with the ncurses library and has support for windows, and
+prompt history, it also abstracts all the user input in the form of commands
+or messages. It also includes a capable to be hidden or shown at will.
+Resizing is also hidden from the user, and messages include wordwrap systems.
+Another feature is its support for color strings. Color strings behave just
+like normal strings except for the fact that when posted to the GUI the
+different parts of the string will be differ in color.
+
+The GUI can be roughly divided into three parts, the GUI system, handling all
+the drawing and containing the handle to ncurses, the Window system, handling
+all the different interactions with a specific abstract window, and the prompt
+system, parsing commands and allowing line-editting.
+
+The GUI and prompt system are both contained within the <DeadGUI> class,
+whilst the window system is split across the two classes named <DeadWindow>
+and <DeadMessage>, the latter being a single message contained in a window.
+
+A GUI window can be attached to an <YeOldeIRCClient> instance or
+channel thereupon automatically handling any traffic going in or out.
+
+ - 3.2 The event system
+
+The event system allows deadline to contain timed events, or activities that
+recur once in a while. It consists of a class <DeadEventQueue> that can be
+used to schedule events with, and a base class <DeadEvent> that should be
+used to implement your own types of events. Every event has two properties
+a delay, and an event ID or EID, the delay determines how much seconds will
+pass before the event is triggered, and the EID can be used to cancel the
+event if it is not needed anymore.
+
+The event queue has a few methods that are useful to the programmer:
+	- scheduleEvent(event)
+		pretty much self-explanatory, schedule <event> for execution.
+		this function returns the event's schedule EID.
+	- cancelEvent(eid)
+		cancel the event carrying EID.
+	- elapseTime(seconds)
+		elapse <seconds> time in the event queue, elapse emulates an atomic
+		action so all events are simultaneously elapsed, any inserts or
+		cancels that happen during this call will occur after the elapse is
+		complete. This atomic behaviour is useful for events that reschedule
+		themselves after triggering, thus implementing periodic behavour.
+
+See the source for more info.
+
+ - 3.3 The IRC library
+
+What would an IRC bot be without an IRC library? Not an IRC bot I guess.
+This library does all the communication with any connected server and also
+handles the non-blocking socket behaviour, such as buffering not-send data and
+fetching any data available and queueing it for processing.
+The IRC library implements the usual abstractions, private chats or queries
+and channels. It also provides IRC network specific information services that
+can be used to inquire about various states such as channel color support,
+user flags or masks, etc.
+
+You can register specific triggers for users with specific names, or channels,
+and connect YeOldeIRCChannel or YeOldeIRCUser objects to DeadWindow objects.
+
+ - 3.4 The Rules library
+
+The rule library is the main 'bot' part of deadline, and contains various
+functions for creating regex triggers, simple rules starting with <.> keyword,
+and authentication systems.
+
+Another useful tool provided by the rules library is state maintanance, such
+as automatically joining channels and rejoining when kicked or somehting else,
+identifying, and responding to services in prediscribed ways, or responding to
+joins, etc. Responding to virtually anything that can happen on IRC.
+
+The rules library's authentication system contain some basic tools such as
+password authentication, but also Access Control Lists or ACLs. An ACL let's
+you determine which users are allowed to execute a certain rule.
+
