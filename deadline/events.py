@@ -36,7 +36,7 @@ class TestEvent(DeadEvent):
 		self.call = call
 
 	def trigger(self, eq):
-		self.call()
+		self.call(self.eid)
 		self.delay = 1.0
 		eq.scheduleEvent(self)
 

@@ -26,6 +26,8 @@ locale.setlocale(locale.LC_ALL, '')
 
 # Das Entrypoint
 def main():
+	global charsread
+
 	# Setup prompt commands
 	gui.registerCommand('quit', quitCall)
 	gui.registerCommand('connect', connectCall)
@@ -44,6 +46,8 @@ def main():
 	newclock = clock = time()
 	eq = DeadEventQueue()
 	eq.scheduleEvent(TestEvent(testEvent))
+	for i in range(999):
+		eq.scheduleEvent(TestEvent(testEventMute))
 
 	while keep_running:
 		try:
@@ -64,8 +68,9 @@ def main():
 				gui.stdscr.touchwin()
 			else:
 				raise e
-		while gui.inputEvent():
-			pass
+		if sys.stdin in rl:
+			while gui.inputEvent():
+				pass
 		newclock = time()
 
 def quitCall(str):
@@ -75,9 +80,13 @@ def quitCall(str):
 def connectCall(server):
 	pass
 
-def testEvent():
-	gui.getMainWindow().addNotice("Test event occurred")
+def testEvent(eid):
+	gui.getMainWindow().addNotice("Test event EID %i occurred" % eid)
 	gui.redrawFromScratch()
+	gui.stdscr.refresh()
+
+def testEventMute(eid):
+	pass
 
 gui = DeadGUI()
 try:
