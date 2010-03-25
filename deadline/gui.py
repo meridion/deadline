@@ -104,6 +104,7 @@ Go back to the normal terminal.
 		self.stdscr.refresh()
 
 	def redrawFromScratch(self):
+		self.stdscr.clear()
 		w = self.windows[self.current_window]
 		w.setArea(0, 0, self.height - 1, self.width)
 		w.redrawFromScratch(self)
@@ -243,10 +244,13 @@ Clear the contents of the prompt.
 	def scrollUp(self):
 		amount = max((self.height - 3) / 2, 1)
 		self.windows[self.current_window].scrollMessageArea(-amount)
+		self.redrawFromScratch()
 
 	def scrollDown(self):
 		amount = max((self.height - 3) / 2, 1)
 		self.windows[self.current_window].scrollMessageArea(amount)
+		self.redrawFromScratch()
+
 
 TITLE_MODE_CENTERED, TITLE_MODE_LEFT, TITLE_MODE_RIGHT = range(3)
 
@@ -307,18 +311,18 @@ class DeadWindow(object):
 	def drawMessageArea(self, gui):
 		if self.scroll is None:
 			h = 0
-			msg = len(self.messages) - 1 
-			while h < self.height:
-				
+			msg = len(self.messages) 
+			while h < self.height - 2:
+
+				msg -= 1
 				if msg == -1:
 					msg = 0
-					h = self.height
+					h = self.height - 2
 					break
 
 				h += self.messages[msg].getRenderSpec(self.width)
-				msg -= 1
 
-			line = h - self.height
+			line = h - (self.height - 2)
 		else:
 			msg, line = self.scroll
 
@@ -337,14 +341,14 @@ class DeadWindow(object):
 	def scrollMessageArea(self, amount):
 		# Unconditionally fetch message position
 		if self.scroll is None:
-			if amount > 0:
+			if amount >= 0:
 				return True
 
 			# Fill the window in 'reverse' to figure out the top message
 			# and line
 			h = 0
 			msg = len(self.messages) - 1 
-			while h < self.height:
+			while h < self.height - 2:
 				
 				# The window is not yet completely filled
 				# scrolling is meaningless
@@ -354,7 +358,7 @@ class DeadWindow(object):
 				h += self.messages[msg].getRenderSpec(self.width)
 				msg -= 1
 
-			line = h - self.height
+			line = h - (self.height - 2)
 		else:
 			msg, line = self.scroll
 
@@ -401,7 +405,7 @@ class DeadWindow(object):
 		while msg < len(self.messages):
 			h += self.messages[msg].getRenderSpec(self.width)
 			msg += 1
-		if h <= self.height:
+		if h <= self.height - 2:
 			self.scroll = None
 
 		return True
@@ -515,8 +519,8 @@ Render a message object to the GUI
 			else:
 				gui.stdscr.addstr(y, x + 6, '** ')
 			gui.stdscr.addstr(y, x + self.prefix_length, broken)
+			y += 1
 		lines = 1
-		y += 1
 		while len(rest):
 			if len(broken) + len(rest) == len(prebreak):
 				prebreak = rest
