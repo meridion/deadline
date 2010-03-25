@@ -65,6 +65,8 @@ Go back to the normal terminal.
 			curses.KEY_ENTER : self.promptExecute,
 			curses.KEY_NEXT : self.promptRight,
 			curses.KEY_PREVIOUS : self.promptLeft,
+			curses.KEY_PPAGE : self.scrollUp,
+			curses.KEY_NPAGE : self.scrollDown,
 			ord(curses.ascii.ctrl('N')) : self.promptRight,
 			ord(curses.ascii.ctrl('P')) : self.promptLeft,
 
@@ -238,6 +240,14 @@ Clear the contents of the prompt.
 		self.position = 0
 		self.view = 0
 
+	def scrollUp(self):
+		amount = max((self.height - 3) / 2, 1)
+		self.windows[self.current_window].scrollMessageArea(-amount)
+
+	def scrollDown(self):
+		amount = max((self.height - 3) / 2, 1)
+		self.windows[self.current_window].scrollMessageArea(amount)
+
 TITLE_MODE_CENTERED, TITLE_MODE_LEFT, TITLE_MODE_RIGHT = range(3)
 
 class DeadWindow(object):
@@ -245,21 +255,31 @@ class DeadWindow(object):
 		self.messages = []
 		self.title = ""
 		self.title_mode = TITLE_MODE_LEFT
-		self.x, self.y, self.width, self.height = 0, 0, 0, 0
+		self.x, self.y, self.width, self.height = (0,) * 4
 		self.name = name
+		self.scroll = None
+		self.more = False
 
 	def addNotice(self, notice):
-		self.messages.append(DeadMessage(DM_NOTICE, notice))
+		self.addMessage(DeadMessage(DM_NOTICE, notice))
 
 	def addIncoming(self, notice):
-		self.messages.append(DeadMessage(DM_INCOMING, notice))
+		self.addMessage(DeadMessage(DM_INCOMING, notice))
 
 	def addOutgoing(self, outgoing):
-		self.messages.append(DeadMessage(DM_OUTGOING, notice))
+		self.addMessage(DeadMessage(DM_OUTGOING, notice))
+
+	def addMessage(self, message):
+		if len(self.messages) == 256:
+			self.messages.pop(0)
+		self.messages.append(message)
+		if self.scroll is not None:
+			self.more = True
 
 	def setArea(self, y, x, height, width):
 		self.y, self.x = y, x
 		self.height, self.width = height, width
+		self.scrollMessageArea(0)
 
 	def setTitle(self, title):
 		self.title = title
@@ -285,13 +305,111 @@ class DeadWindow(object):
 		gui.stdscr.addstr(self.y, self.x, str, gui.infobarcolor)
 
 	def drawMessageArea(self, gui):
+		if self.scroll is None:
+			h = 0
+			msg = len(self.messages) - 1 
+			while h < self.height:
+				
+				if msg == -1:
+					msg = 0
+					h = self.height
+					break
+
+				h += self.messages[msg].getRenderSpec(self.width)
+				msg -= 1
+
+			line = h - self.height
+		else:
+			msg, line = self.scroll
+
 		y = self.y + 1
-		for message in self.messages:
-			h = message.getRenderSpec(self.width)
-			message.render(gui, y, self.x, h, self.width, 0)
+		for message in self.messages[msg:]:
+			h = min(message.getRenderSpec(self.width) - line,
+				self.height - y - 1)
+			message.render(gui, y, self.x, h, self.width, line)
+			line = 0
 			y += h
+			if y >= self.height - 1:
+				break
+
+		return True
+
+	def scrollMessageArea(self, amount):
+		# Unconditionally fetch message position
+		if self.scroll is None:
+			if amount > 0:
+				return True
+
+			# Fill the window in 'reverse' to figure out the top message
+			# and line
+			h = 0
+			msg = len(self.messages) - 1 
+			while h < self.height:
+				
+				# The window is not yet completely filled
+				# scrolling is meaningless
+				if msg == -1:
+					return True
+
+				h += self.messages[msg].getRenderSpec(self.width)
+				msg -= 1
+
+			line = h - self.height
+		else:
+			msg, line = self.scroll
+
+		# This is necessary since the width of the window might've been
+		# changed since last time this function was called
+		h = self.messages[msg].getRenderSpec(self.width)
+		line = min(line, h)
+
+		# Scroll down
+		if amount > 0:
+			# Allign to message border
+			amount -= h - line
+			msg += 1
+			line = 0
+			while amount > 0 and msg < len(self.messages):
+				amount -= self.messages[msg].getRenderSpec(self.width)
+				msg += 1
+
+		# Scroll up
+		if amount < 0:
+			# Allign to message border
+			amount += line
+			line = 0
+			while amount < 0 and msg > 0:
+				msg -= 1
+				amount += self.messages[msg].getRenderSpec(self.width)
+
+		# Hit the top
+		if amount < 0:
+			self.scroll = (0, 0)
+			return True
+
+		# Hit the bottom
+		if msg == len(self.messages):
+			self.scroll = None
+			return True
+
+		# Scroll within current top message
+		self.scroll = (msg, amount)
+
+		# Fill window and test for incomplete fills
+		h = self.messages[msg].getRenderSpec(self.width) - amount
+		msg += 1
+		while msg < len(self.messages):
+			h += self.messages[msg].getRenderSpec(self.width)
+			msg += 1
+		if h <= self.height:
+			self.scroll = None
+
+		return True
 
 	def drawInfo(self, gui):
+		if self.scroll is None:
+			self.more = False
+
 		# Infobar
 		gui.stdscr.addch(self.y + self.height - 1, self.x,
 			' ', gui.infobarcolor)
@@ -310,6 +428,10 @@ class DeadWindow(object):
 		# Infobar
 		gui.stdscr.addstr(self.y + self.height - 1, self.x + 8,
 			' ' * (self.width - 8), gui.infobarcolor)
+
+		if self.more:
+			gui.stdscr.addstr(self.y + self.height - 1, self.width - 11,
+				'-- more --', gui.infobarcolor)
 
 DM_RAW, DM_NOTICE, DM_CHAT, DM_INCOMING, DM_OUTGOING = range(5)
 

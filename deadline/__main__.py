@@ -45,9 +45,6 @@ def main():
 	# Setup Event queue
 	newclock = clock = time()
 	eq = DeadEventQueue()
-	eq.scheduleEvent(TestEvent(testEvent))
-	for i in range(999):
-		eq.scheduleEvent(TestEvent(testEventMute))
 
 	while keep_running:
 		try:
@@ -78,14 +75,6 @@ def quitCall(str):
 	keep_running = False
 
 def connectCall(server):
-	pass
-
-def testEvent(eid):
-	gui.getMainWindow().addNotice("Test event EID %i occurred" % eid)
-	gui.redrawFromScratch()
-	gui.stdscr.refresh()
-
-def testEventMute(eid):
 	pass
 
 gui = DeadGUI()
