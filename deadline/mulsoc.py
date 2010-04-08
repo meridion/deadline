@@ -105,22 +105,43 @@ class SocketMultiplexer(object):
 		self.keep_running = False
 		return True
 
-	def connect(self, ip, port):
+	def connect(self, ip, port, **keywords):
 		"""
-			Initiate a client connection to the specified server
+			Initiate a client connection to the specified server.
+
+			Additionally you can specify 'sock = <some class' in the
+			function call to override the default socket instantiator.
+			Any additional keywords shall be passed on to
+			the socket constructor.
 		"""
-		new = self.sock(self, ip, port)
+		try:
+			sock = keywords['sock']
+			del keywords['sock']
+		except KeyError:
+			sock = self.sock
+		new = sock(self, ip, port, **keywords)
 		new.connect()
 		return True
 
 	def listen(self, ip, port,
-			queue_length = None):
+			queue_length = None, **keywords):
 		"""
 			Create a new socket that will start listening on
-			the specified address
+			the specified address.
+
+			Additionally you can specify 'sock = <some class' in the
+			function call to override the default socket instantiator.
+			Any additional keywords shall be passed on to
+			the socket constructor.
 		"""
 		if queue_length == None:
 			queue_length = SocketMultiplexer.LISTEN_QUEUE_DEFAULT
+		try:
+			sock = keywords['sock']
+			del keywords['sock']
+		except KeyError:
+			sock = self.sock
+		new = sock(self, ip, port, **keywords)
 		new = self.sock(self, ip, port)
 		if not new.listen(queue_length):
 			return False
@@ -237,7 +258,8 @@ class ManagedSocket(object):
 		try:
 			self.sock.listen(queue_length)
 		except socket.error, e:
-			if e.errno != EADDRINUSE:
+			error = e.args[0]
+			if error != EADDRINUSE:
 				raise e
 			return False
 		self.muxer.addReader(self)
@@ -276,13 +298,14 @@ class ManagedSocket(object):
 			self.muxer.addReader(self)
 			self.muxer.delWriter(self)
 		except socket.error, e:
-			if e.errno == errno.ECONNREFUSED:
+			error = e.args[0]
+			if error == errno.ECONNREFUSED:
 				self.state = ManagedSocket.DISCONNECTED
 				self.onConnectionRefuse()
 				return False
-			elif e.errno == errno.EAGAIN:
+			elif error == errno.EAGAIN:
 				return False
-			elif e.errno != errno.EINPROGRESS:
+			elif error != errno.EINPROGRESS:
 				raise e
 		return True
 
@@ -301,7 +324,8 @@ class ManagedSocket(object):
 						break
 					data += d
 			except socket.error, e:
-				if e.errno != errno.EWOULDBLOCK and e.errno != errno.EINTR:
+				error = e.args[0]
+				if error != errno.EWOULDBLOCK and error != errno.EINTR:
 					raise e
 
 			if data != '':
@@ -320,7 +344,8 @@ class ManagedSocket(object):
 					conn, addr = self.sock.accept()
 					self.onAccept(type(self)(self.muxer, conn, addr))
 			except socket.error, e:
-				if e.errno != errno.EWOULDBLOCK and e.errno != errno.EINTR:
+				error = e.args[0]
+				if error != errno.EWOULDBLOCK and error != errno.EINTR:
 					raise e
 
 			return True
@@ -343,16 +368,18 @@ class ManagedSocket(object):
 				x = self.sock.send(self.wbuf[:4096])
 				self.wbuf = self.wbuf[x:]
 			except socket.error, e:
+				error = e.args[0]
+
 				# Connection lost
-				if e.errno == errno.EPIPE:
+				if error == errno.EPIPE:
 					self.state = ManagedSocket.DISCONNECTED
 					self.onDisconnect()
 					self.wbuf = ''
-				elif e.errno == errno.EWOULDBLOCK:
+				elif error == errno.EWOULDBLOCK:
 					if not self.lwb:
 						self.lwb = True
 						self.muxer.addWriter(self)
-				elif e.errno != errno.EINTR:
+				elif error != errno.EINTR:
 					raise e
 				break
 
@@ -388,7 +415,8 @@ class ManagedSocket(object):
 			try:
 				self.sock.shutdown(socket.SHUT_RDWR)
 			except socket.error, e:
-				if e.errno != ENOTCONN:
+				error = e.args[0]
+				if error != ENOTCONN:
 					raise e
 
 			self.muxer.delReader(self)
