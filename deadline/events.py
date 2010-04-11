@@ -1,8 +1,24 @@
 # Deadline event driven subsystems
+"""
+	Deadline Event Queue
+
+	This file implements a simple time driven event system, that can be used
+	to schedule delayed execution, periodic (cron) jobs in combination
+	with non-blocking socket operations.
+"""
+
+from heapq import heappush, heappop, heapify
 
 class DeadEvent(object):
+	"""
+		Abstract event class, useful for implementing your own
+		events
+	"""
+
 	def __init__(self, delay):
+		delay = float(delay)
 		self.delay = delay
+		self.odelay = delay
 
 	def trigger(self, eq):
 		"""
@@ -13,49 +29,73 @@ Method called when event occurs.
 	def getDelay(self):
 		return self.delay
 
-	def setEID(self, eid):
-		self.eid = eid
-
-	def getEID(self):
-		return self.eid
-
 	def elapseTime(self, time, eq):
 		"""
-Elapse 'time' units of time.
-If the event is triggered the function returns True
+			Elapse 'time' units of time.
+			If the event is triggered the function returns True
 		"""
+
 		self.delay -= time
-		if self.delay <= 0.0:
+		if self.delay <= 0.001:
 			self.trigger(eq)
 			return True
 		return False
 
-class TestEvent(DeadEvent):
-	def __init__(self, call):
-		DeadEvent.__init__(self, 1.0)
+	# Rich comparison interface for use in the heap queue
+	def __lt__(self, other):
+		return self.delay < other.delay
+
+	def __le__(self, other):
+		return self.delay <= other.delay
+
+	def __eq__(self, other):
+		return self.delay == other.delay
+
+	def __ne__(self, other):
+		return self.delay != other.delay
+
+	def __gt__(self, other):
+		return self.delay > other.delay
+
+	def __ge__(self, other):
+		return self.delay >= other.delay
+
+# Some useful basic events
+class DeferredCall(DeadEvent):
+	"""
+		This event executes a function call after
+		a given period of time.
+	"""
+
+	def __init__(self, delay, call, **args):
+		DeadEvent.__init__(self, delay)
+		self.args = args
 		self.call = call
 
 	def trigger(self, eq):
-		self.call(self.eid)
-		self.delay = 1.0
-		eq.scheduleEvent(self)
+		self.call(**self.args)
+
+class PeriodicCall(DeferredCall):
+	"""
+		This event keeps calling a specified call at the given
+		frequency as long as the call keeps returning True.
+	"""
+
+	def trigger(self, eq):
+		if self.call(**self.args):
+			self.delay = self.odelay
+			eq.scheduleEvent(self)
 
 class DeadEventQueue(object):
 	def __init__(self):
 		self.events = []
-		self.neid = 0
-		self.eid_roof = 1024
+		self.isheap = True
 		self.elapsing = False
 
 	def scheduleEvent(self, event):
 		"""
-Schedule an event for execution.
-
-The function shall return the event-code that can be used to cancel the event.
+			Schedule an event for execution.
 		"""
-
-		eid = self._generateEID()
-		event.setEID(eid)
 
 		# Since it is possible for events to be scheduled
 		# during the execution of elapseTime (which would ruin our queue)
@@ -63,96 +103,72 @@ The function shall return the event-code that can be used to cancel the event.
 		# we defer those calls until the elapse call is complete
 		if self.elapsing:
 			self.scheds.append(event)
-			return eid
+			return
 
-		self._insertEvent(event)
-		return eid
+		# Guarantee heap structure
+		if not self.isheap:
+			heapify(self.events)
+			self.isheap = True
 
-	def cancelEvent(self, eid):
+		heappush(self.events, event)
+
+	def cancelEvent(self, ev):
 		"""
-Cancel an event as specified by it's EID
+			Cancel a scheduled event.
+
+			Cancelling is an expensive operation since it breaks the heap
+			structure, it is therefore recommended to group inserts together
+			and keep them separate from cancels which should also be grouped.
+			This way the penalty for cancellation is minimized.
 		"""
 
 		# Same goes for events being cancelled
 		if self.elapsing:
-			self.cancels.append(eid)
+			self.cancels.append(ev)
 		else:
-			self.events = filter(lambda e: e.getEID() != eid, self.events)
+			if ev in self.events:
+				self.events.remove(ev)
+				self.isheap = len(self.events) == 0
 
 	def elapseTime(self, time):
 		"""
-"Atomically" elapse the time of events in the queue
+			"Atomically" elapse the time of events in the queue
 		"""
+
 		self.scheds = []
 		self.cancels = []
 
+		# Guarantee heap structure
+		if not self.isheap:
+			heapify(self.events)
+			self.isheap = True
+
 		# Do elapse
 		self.elapsing = True
-		self.events = filter(lambda e: not e.elapseTime(time, self),
-			self.events)
+		while len(self.events) and self.events[0].elapseTime(time, self):
+			heappop(self.events)
+		for ev in self.events[1:]: ev.elapseTime(time, self)
 		self.elapsing = False
-
+ 
 		# Insert events scheduled in the mean time
-		for e in self.scheds:
-			self._insertEvent(e)
-
-		for eid in self.cancels:
-			self.cancelEvent(eid)
+		for ev in self.scheds: self.scheduleEvent(ev)
+		for ev in self.cancels: self.cancelEvent(ev)
 
 		del self.cancels
 		del self.scheds
 
 	def nextEventTicks(self):
 		"""
-Returns the ticks remaining till the next event.
+			Returns the ticks remaining till the next event.
 		"""
+
+		# Guarantee heap structure
+		if not self.isheap:
+			heapify(self.events)
+			self.isheap = True
+
 		if len(self.events):
 			return self.events[0].getDelay()
+
 		return None
-
-	def _insertEvent(self, e):
-		"""
-Internal function that inserts an event in the queue at the right place
-
-e: Event to be insterted
-
-This function returns nothing.
-		"""
-		d = e.getDelay()
-		for i in range(len(self.events)):
-			if d < self.events[i].getDelay():
-				self.insert(i, e)
-				return
-		self.events.append(e)
-
-	def _generateEID(self):
-		"""
-Internal function for generating EIDs.
-		"""
-
-		# To try and keep the EIDs low we use an algorithm
-		# that allocates EID spaces of size 1024 and tries
-		# to clame the lowest space available
-
-		# Check if we have no more EIDs left
-		if self.neid == self.eid_roof:
-			eids = map(lambda e: e.getEID(), self.events)
-			eids.sort()
-
-			# Search for a 1024 EID gap
-			eids.insert(0, -1)
-			for i in range(len(eids) - 1):
-				if eids[i + 1] - eids[i] >= 1024:
-					self.neid = eids[i] + 1
-					self.eid_roof = eids[i + 1]
-					return self._generateEID()
-
-			# If we were unable to find one create a new one at the end
-			self.neid = eids[len(eids) - 1] + 1
-			self.eid_roof = self.neid + 1024
-			return self._generateEID()
-		else:
-			eid = self.neid
-			self.neid += 1
-			return eid
 

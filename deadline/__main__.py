@@ -15,71 +15,71 @@ from errno import EINTR
 from time import time, localtime
 import select
 
-# Global settings variables
-keep_running = True
-
 # Fetch the system locale settings, so ncurses can do its job correctly
 # UTF8 strings to be precise
 # For more info see: http://docs.python.org/3.1/library/curses.html
 import locale
 locale.setlocale(locale.LC_ALL, '')
 
-# Das Entrypoint
-def main():
-	global charsread
+class Deadline(SocketMultiplexer):
+	"""
+		Deadline IRC bot v0.1
 
-	# Setup prompt commands
-	gui.registerCommand('quit', quitCall)
-	gui.registerCommand('connect', connectCall)
+		Application class
+	"""
 
-	# Initialize main window
-	mainwin = gui.getMainWindow()
-	mainwin.setTitle("Deadline v0.1")
-	mainwin.setTitleAlignment(TITLE_MODE_CENTERED)
-	mainwin.addNotice("Welcome to Deadline v0.1")
-	mainwin.addNotice("You can type '/quit' to quit," +
-		" or type something else to simply see it" +
-		" show up in this window :-)")
-	gui.show()
+	def __init__(self):
+		SocketMultiplexer.__init__(self)
+		self.addReader(StandardInput())
 
-	# Setup Event queue
-	newclock = clock = time()
-	eq = DeadEventQueue()
+	# Das Entrypoint
+	def run(self):
+		# Setup prompt commands
+		gui.registerCommand('quit', self.quitCall)
+		gui.registerCommand('connect', self.connectCall)
 
-	while keep_running:
-		try:
-			# if ircc.isConnected():
-			# 	select.select([sys.stdin, ircs], [], [])
-			# else:
-			# 	select.select([sys.stdin], [ircs], [])
-			# 	ircc.doConnect()
-			if newclock - clock > 0.0:
-				eq.elapseTime(newclock - clock)
-			clock = newclock
-			rl, wl, el = select.select([sys.stdin], [], [], eq.nextEventTicks())
-		except select.error, e:
-			if e.args[0] == EINTR:
-				# We might've been interrupted by a SIGWINCH
-				# signal, which means we need to resize our
-				# window
-				gui.stdscr.touchwin()
-			else:
-				raise e
-		if sys.stdin in rl:
-			while gui.inputEvent():
-				pass
-		newclock = time()
+		# Initialize main window
+		mainwin = gui.getMainWindow()
+		mainwin.setTitle("Deadline v0.1")
+		mainwin.setTitleAlignment(TITLE_MODE_CENTERED)
+		mainwin.addNotice("Welcome to Deadline v0.1")
+		mainwin.addNotice("You can type '/quit' to quit," +
+			" or type something else to simply see it" +
+			" show up in this window :-)")
+		gui.show()
+		self.startMultiplex()
 
-def quitCall(str):
-	global keep_running
-	keep_running = False
+	def onSignal(self):
+		"""
+			Handles SIGWINCH for terminal resizing.
+		"""
+		gui.stdscr.touchwin()
+		while gui.inputEvent():
+			pass
 
-def connectCall(server):
-	pass
+	def quitCall(self, str):
+		self.stopMultiplex()
+
+	def connectCall(self, server):
+		pass
+
+class StandardInput(object):
+	"""
+		Standard input handler for SocketMultiplexer
+	"""
+
+	def fileno(self):
+		return sys.stdin.fileno()
+
+	def handleRead(self):
+		while gui.inputEvent():
+			pass
 
 gui = DeadGUI()
+app = Deadline()
+
 try:
-	main()
+	app.run()
 finally:
 	gui.hide()
 print "Have a nice day!"

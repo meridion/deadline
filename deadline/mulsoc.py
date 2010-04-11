@@ -10,6 +10,7 @@ import socket
 from select import select, error as select_error
 from time import time
 import errno
+from events import DeadEventQueue, DeferredCall
 
 class SocketMultiplexer(object):
 	"""
@@ -30,17 +31,17 @@ class SocketMultiplexer(object):
 			This class represents the occurrence of a deadlock in the event
 			processing system. (It would wait forever on nothing)
 		"""
-		pass
 
 	def __init__(self, sock = None):
 		"""
-			Iinitialize a base SocketMultiplexer that uses 'sock' as its
+			Initialize a base SocketMultiplexer that uses 'sock' as its
 			ManagedSocket instantiator.
 		"""
 		self.keep_running = False
 		if sock is None:
 			sock = ManagedSocket
 		self.sock = sock
+		self.eq = DeadEventQueue()
 		self.alarm = None
 		self.reads, self.writes = [], []
 
@@ -57,35 +58,33 @@ class SocketMultiplexer(object):
 		while self.keep_running:
 			try:
 
-				# Handle the alarm
-				if self.alarm is None:
+				# Handle the events system
+				if self.eq.nextEventTicks() is None:
 					tick = None
 				elif tick is None:
 					tick = time()
 				else:
 					newtick = time()
 					if newtick - tick > 0.0:
-						self.alarm -= newtick - tick
+						self.eq.elapseTime(newtick - tick)
 					tick = newtick
 					del newtick
-
-					if self.alarm - 0.001 <= 0.0:
-						self.alarm = None
-						self.tick = None
-						self.onAlarm()
 
 				# Guard against activity deadlocks
 				# They really shouldn't occur, but it is good practice to
 				# catch them.
 				if len(self.reads) + len(self.writes) == 0 and \
-						self.alarm is None:
+						self.eq.nextEventTicks() is None:
 					raise SocketMultiplexer.Deadlock("No events left")
 
 				# Wait for activity
 				reads, writes, excepts = \
-					select(self.reads, self.writes, [], self.alarm)
+					select(self.reads, self.writes, [],
+						self.eq.nextEventTicks())
+
 			except select_error, e:
-				if e.errno == errno.EINTR:
+				if e.args[0] == errno.EINTR:
+					self.onSignal()
 					continue
 				self.keep_running = False
 				raise e
@@ -190,14 +189,29 @@ class SocketMultiplexer(object):
 			Sets an alarm that will occur in 'seconds' time, seconds may be
 			fractional. If seconds is None any pending alarm will be cancelled
 		"""
-		self.alarm = float(seconds)
+
+		if self.alarm is not None:
+			self.eq.cancelEvent(self.alarm)
+		self.alarm = DeferredCall(seconds, self.execAlarm)
+		self.eq.scheduleEvent(self.alarm)
 		return True
+
+	def execAlarm(self):
+		"""
+			Handler that executes the onAlarm() method.
+		"""
+		self.alarm = None
+		self.onAlarm()
 
 	def onAlarm(self):
 		"""
 			Called when the alarm set by setAlarm() occurs
 		"""
-		pass
+
+	def onSignal(self):
+		"""
+			Called when select() is interrupted by a signal.
+		"""
 
 class ManagedSocket(object):
 	"""
