@@ -192,8 +192,9 @@ class SocketMultiplexer(object):
 
 		if self.alarm is not None:
 			self.eq.cancelEvent(self.alarm)
-		self.alarm = DeferredCall(seconds, self.execAlarm)
-		self.eq.scheduleEvent(self.alarm)
+		if seconds is not None:
+			self.alarm = DeferredCall(seconds, self.execAlarm)
+			self.eq.scheduleEvent(self.alarm)
 		return True
 
 	def execAlarm(self):
@@ -231,7 +232,7 @@ class ManagedSocket(object):
 
 				the unexpected way, re-using an already connected socket
 				(that has been obtained through accepting).
-				In this case 'port' should contain a tupple describing
+				In this case 'port' should contain a tuple describing
 				the peer's address (ip, port).
 		"""
 
