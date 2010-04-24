@@ -12,6 +12,9 @@ from time import time
 import errno
 from events import DeadEventQueue, DeferredCall
 
+def getMyIP():
+    return socket.gethostbyname(socket.gethostname())
+
 class SocketMultiplexer(object):
     """
         Abstract socket multiplexer, useful for managing lots of sockets
@@ -37,13 +40,13 @@ class SocketMultiplexer(object):
             Initialize a base SocketMultiplexer that uses 'sock' as its
             ManagedSocket instantiator.
         """
-        self.keep_running = False
+        self._keep_running = False
         if sock is None:
             sock = ManagedSocket
-        self.sock = sock
+        self._sock = sock
         self.eq = DeadEventQueue()
-        self.alarm = None
-        self.reads, self.writes = [], []
+        self._alarm = None
+        self._reads, self._writes = [], []
 
     def startMultiplex(self):
         """
@@ -52,10 +55,10 @@ class SocketMultiplexer(object):
             or stopMultiplex is called.
         """
 
-        self.keep_running = True
+        self._keep_running = True
         tick = None
 
-        while self.keep_running:
+        while self._keep_running:
             try:
 
                 # Handle the events system
@@ -73,20 +76,35 @@ class SocketMultiplexer(object):
                 # Guard against activity deadlocks
                 # They really shouldn't occur, but it is good practice to
                 # catch them.
-                if len(self.reads) + len(self.writes) == 0 and \
+                if len(self._reads) + len(self._writes) == 0 and \
                         self.eq.nextEventTicks() is None:
                     raise SocketMultiplexer.Deadlock("No events left")
 
                 # Wait for activity
                 reads, writes, excepts = \
-                    select(self.reads, self.writes, [],
+                    select(self._reads, self._writes, [],
                         self.eq.nextEventTicks())
+
+                # Handle the events system
+                # I know this isn't the nicest solution, but
+                # this is required to fix a nasty bug triggering over
+                # execution.
+                if self.eq.nextEventTicks() is None:
+                    tick = None
+                elif tick is None:
+                    tick = time()
+                else:
+                    newtick = time()
+                    if newtick - tick > 0.0:
+                        self.eq.elapseTime(newtick - tick)
+                    tick = newtick
+                    del newtick
 
             except select_error, e:
                 if e.args[0] == errno.EINTR:
                     self.onSignal()
                     continue
-                self.keep_running = False
+                self._keep_running = False
                 raise e
 
             # Handle reads and writes
@@ -95,13 +113,21 @@ class SocketMultiplexer(object):
 
         return True
 
+    def timeFlow(self):
+        """
+            Executes the flow of time.
+
+            This function will be used in the future to
+            prevent clock jumps and streamline the events system.
+        """
+
     def stopMultiplex(self):
         """
             Stop multiplexing.
         """
-        if not self.keep_running:
+        if not self._keep_running:
             return False
-        self.keep_running = False
+        self._keep_running = False
         return True
 
     def connect(self, ip, port, **keywords):
@@ -117,7 +143,7 @@ class SocketMultiplexer(object):
             sock = keywords['sock']
             del keywords['sock']
         except KeyError:
-            sock = self.sock
+            sock = self._sock
         new = sock(self, ip, port, **keywords)
         new.connect()
         return True
@@ -139,9 +165,9 @@ class SocketMultiplexer(object):
             sock = keywords['sock']
             del keywords['sock']
         except KeyError:
-            sock = self.sock
+            sock = self._sock
         new = sock(self, ip, port, **keywords)
-        new = self.sock(self, ip, port)
+        new = self._sock(self, ip, port)
         if not new.listen(queue_length):
             return False
         return True
@@ -150,9 +176,9 @@ class SocketMultiplexer(object):
         """
             Add socket to the list of sockets watched for reading
         """
-        if sock in self.reads:
+        if sock in self._reads:
             return False
-        self.reads.append(sock)
+        self._reads.append(sock)
         return True
 
     def delReader(self, sock):
@@ -160,8 +186,8 @@ class SocketMultiplexer(object):
             Delete socket from the list of sockets watched for reading
         """
         try:
-            self.reads.remove(sock)
-        except NoSuchElementException:
+            self._reads.remove(sock)
+        except AttributeError:
             return False
         return True
 
@@ -169,9 +195,9 @@ class SocketMultiplexer(object):
         """
             Add socket to the list of sockets watched for writing
         """
-        if sock in self.writes:
+        if sock in self._writes:
             return False
-        self.writes.append(sock)
+        self._writes.append(sock)
         return True
 
     def delWriter(self, sock):
@@ -179,8 +205,8 @@ class SocketMultiplexer(object):
             Delete socket from the list of sockets watched for writing
         """
         try:
-            self.writes.remove(sock)
-        except NoSuchElementException:
+            self._writes.remove(sock)
+        except AttributeError:
             return False
         return True
 
@@ -190,17 +216,18 @@ class SocketMultiplexer(object):
             fractional. If seconds is None any pending alarm will be cancelled
         """
 
-        if self.alarm is not None:
-            self.eq.cancelEvent(self.alarm)
-        self.alarm = DeferredCall(seconds, self.execAlarm)
-        self.eq.scheduleEvent(self.alarm)
+        if self._alarm is not None:
+            self.eq.cancelEvent(self._alarm)
+        if seconds is not None:
+            self._alarm = DeferredCall(seconds, self.execAlarm)
+            self.eq.scheduleEvent(self._alarm)
         return True
 
     def execAlarm(self):
         """
             Handler that executes the onAlarm() method.
         """
-        self.alarm = None
+        self._alarm = None
         self.onAlarm()
 
     def onAlarm(self):
@@ -231,53 +258,54 @@ class ManagedSocket(object):
 
                 the unexpected way, re-using an already connected socket
                 (that has been obtained through accepting).
-                In this case 'port' should contain a tupple describing
+                In this case 'port' should contain a tuple describing
                 the peer's address (ip, port).
+                'ip' should contain a tuple containing only the socket object.
         """
 
-        if type(ip) is socket.socket:
-            self.sock = ip
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        if type(ip) is tuple:
+            self._sock = ip[0]
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             self.ip, self.port = port
-            self.state = ManagedSocket.CONNECTED
+            self._state = ManagedSocket.CONNECTED
             muxer.addReader(self)
         else:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.ip = ip
             self.port = port
-            self.state = ManagedSocket.UNBOUND
+            self._state = ManagedSocket.UNBOUND
 
         # Setup common states
-        self.sock.setblocking(0)
+        self._sock.setblocking(0)
         self.muxer = muxer
-        self.wbuf = ''
+        self._wbuf = ''
 
         # Last write blocked flag, used for speeding up non-blocking writes
-        self.lwb = False
+        self._lwb = False
 
     def fileno(self):
         """
             Return this socket's file descriptor for waiting.
         """
-        return self.sock.fileno()
+        return self._sock.fileno()
 
     def listen(self, queue_length):
         """
             Start listening for clients.
         """
-        if self.state != ManagedSocket.UNBOUND:
+        if self._state != ManagedSocket.UNBOUND:
             return False
-        self.sock.bind((self.ip, self.port))
-        self.state = ManagedSocket.DISCONNECTED
         try:
-            self.sock.listen(queue_length)
+            self._sock.bind((self.ip, self.port))
         except socket.error, e:
             error = e.args[0]
-            if error != EADDRINUSE:
+            if error != errno.EADDRINUSE and error != errno.EACCES:
                 raise e
             return False
+        self._state = ManagedSocket.DISCONNECTED
+        self._sock.listen(queue_length)
         self.muxer.addReader(self)
-        self.state = ManagedSocket.LISTENING
+        self._state = ManagedSocket.LISTENING
         return True
 
     def connect(self):
@@ -285,12 +313,12 @@ class ManagedSocket(object):
             Start connecting to client.
         """
 
-        if self.state != ManagedSocket.UNBOUND:
+        if self._state != ManagedSocket.UNBOUND:
             return False
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         self.handleConnect()
 
-        return self.state != ManagedSocket.DISCONNECTED
+        return self._state != ManagedSocket.DISCONNECTED
 
     def handleConnect(self):
         """
@@ -298,23 +326,24 @@ class ManagedSocket(object):
             use only.
         """
 
-        if self.state == ManagedSocket.CONNECTED:
+        if self._state == ManagedSocket.CONNECTED:
             return False
 
-        if self.state != ManagedSocket.CONNECTING:
-            self.state = ManagedSocket.CONNECTING
+        if self._state != ManagedSocket.CONNECTING:
+            self._state = ManagedSocket.CONNECTING
             self.muxer.addWriter(self)
 
         try:
-            self.sock.connect((self.ip, self.port))
-            self.state = ManagedSocket.CONNECTED
+            self._sock.connect((self.ip, self.port))
+            self._state = ManagedSocket.CONNECTED
             self.onConnect()
             self.muxer.addReader(self)
             self.muxer.delWriter(self)
         except socket.error, e:
             error = e.args[0]
-            if error == errno.ECONNREFUSED:
-                self.state = ManagedSocket.DISCONNECTED
+            if error == errno.ECONNREFUSED or error == errno.ETIMEDOUT:
+                self._state = ManagedSocket.DISCONNECTED
+                self.muxer.delWriter(self)
                 self.onConnectionRefuse()
                 return False
             elif error == errno.EAGAIN:
@@ -330,33 +359,43 @@ class ManagedSocket(object):
 
         # Read data
         data = ''
-        if self.state == ManagedSocket.CONNECTED:
+        d = ''
+        if self._state == ManagedSocket.CONNECTED:
             try:
-                while self.state == ManagedSocket.CONNECTED:
-                    d = self.sock.recv(4096)
+                while self._state == ManagedSocket.CONNECTED:
+                    d = self._sock.recv(4096)
                     if d == '':
                         break
                     data += d
             except socket.error, e:
                 error = e.args[0]
-                if error != errno.EWOULDBLOCK and error != errno.EINTR:
+                if error == errno.ECONNRESET or error == errno.ETIMEDOUT:
+                    self.muxer.delReader(self)
+                    if self._lwb:
+                        self.muxer.delWriter(self)
+                    self._state = ManagedSocket.DISCONNECTED
+                    self.onDisconnect()
+                elif error != errno.EWOULDBLOCK and error != errno.EINTR:
                     raise e
 
             if data != '':
                 self.onRecv(data)
 
             # Connection lost or shutdown
-            if d == '':
-                self.state = ManagedSocket.DISCONNECTED
+            if d =='' and self._state == ManagedSocket.CONNECTED:
+                self.muxer.delReader(self)
+                if self._lwb:
+                    self.muxer.delWriter(self)
+                self._state = ManagedSocket.DISCONNECTED
                 self.onDisconnect()
             return True
 
         # Accept a new client
-        elif self.state == ManagedSocket.LISTENING:
+        elif self._state == ManagedSocket.LISTENING:
             try:
-                while self.state == ManagedSocket.LISTENING:
-                    conn, addr = self.sock.accept()
-                    self.onAccept(type(self)(self.muxer, conn, addr))
+                while self._state == ManagedSocket.LISTENING:
+                    conn, addr = self._sock.accept()
+                    self.onAccept(type(self)(self.muxer, (conn,), addr))
             except socket.error, e:
                 error = e.args[0]
                 if error != errno.EWOULDBLOCK and error != errno.EINTR:
@@ -371,33 +410,38 @@ class ManagedSocket(object):
             Internal function that mediates non-blocking writes.
         """
 
-        if self.state == ManagedSocket.CONNECTING:
+        if self._state == ManagedSocket.CONNECTING:
             self.handleConnect()
             return True
-        elif self.state != ManagedSocket.CONNECTED:
+        elif self._state != ManagedSocket.CONNECTED:
             return False
 
-        while len(self.wbuf) and self.state == ManagedSocket.CONNECTED:
+        while len(self._wbuf) and self._state == ManagedSocket.CONNECTED:
             try:
-                x = self.sock.send(self.wbuf[:4096])
-                self.wbuf = self.wbuf[x:]
+                x = self._sock.send(self._wbuf[:4096])
+                self._wbuf = self._wbuf[x:]
             except socket.error, e:
                 error = e.args[0]
 
                 # Connection lost
-                if error == errno.EPIPE:
-                    self.state = ManagedSocket.DISCONNECTED
+                if error == errno.EPIPE or error == errno.ECONNRESET \
+                    or error == errno.ETIMEDOUT:
+                    self._state = ManagedSocket.DISCONNECTED
+                    self.muxer.delReader(self)
+                    if self._lwb:
+                        self.muxer.delWriter(self)
                     self.onDisconnect()
-                    self.wbuf = ''
+                    self._wbuf = ''
+                    return False
                 elif error == errno.EWOULDBLOCK:
-                    if not self.lwb:
-                        self.lwb = True
+                    if not self._lwb:
+                        self._lwb = True
                         self.muxer.addWriter(self)
                 elif error != errno.EINTR:
                     raise e
                 break
 
-        if not len(self.wbuf) and self.lwb:
+        if not len(self._wbuf) and self._lwb:
             self.muxer.delWriter(self)
 
         return True
@@ -407,9 +451,9 @@ class ManagedSocket(object):
             Place data in the output buffer for sending. All data will be
             sent ASAP to the peer socket.
         """
-        if self.state != ManagedSocket.CONNECTED:
+        if self._state != ManagedSocket.CONNECTED:
             return False
-        self.wbuf += data
+        self._wbuf += data
         self.handleWrite()
         return True
 
@@ -419,31 +463,31 @@ class ManagedSocket(object):
             not be of any more worth.
         """
 
-        if self.state == ManagedSocket.CLOSED:
+        if self._state == ManagedSocket.CLOSED:
             return False
 
-        if self.state == ManagedSocket.CONNECTED:
+        if self._state == ManagedSocket.CONNECTED:
 
             # There are some rare conditions in which our socket has become
             # disconnected before executing this call
             try:
-                self.sock.shutdown(socket.SHUT_RDWR)
+                self._sock.shutdown(socket.SHUT_RDWR)
             except socket.error, e:
                 error = e.args[0]
                 if error != ENOTCONN:
                     raise e
 
             self.muxer.delReader(self)
-            if self.lwb:
+            if self._lwb:
                 self.muxer.delWriter(self)
-        elif self.state == ManagedSocket.CONNECTING:
+        elif self._state == ManagedSocket.CONNECTING:
             self.muxer.delWriter(self)
-        elif self.state == ManagedSocket.LISTENING:
+        elif self._state == ManagedSocket.LISTENING:
             self.muxer.delReader(self)
 
-        self.sock.close()
-        self.sock = None
-        self.state = ManagedSocket.CLOSED
+        self._sock.close()
+        self._sock = None
+        self._state = ManagedSocket.CLOSED
         return True
 
     def onRecv(self, data):
