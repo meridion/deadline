@@ -267,11 +267,11 @@ class DeadWindow(object):
     def addNotice(self, notice):
         self.addMessage(DeadMessage(DM_NOTICE, notice))
 
-    def addIncoming(self, notice):
-        self.addMessage(DeadMessage(DM_INCOMING, notice))
+    def addIncoming(self, incoming):
+        self.addMessage(DeadMessage(DM_INCOMING, incoming))
 
     def addOutgoing(self, outgoing):
-        self.addMessage(DeadMessage(DM_OUTGOING, notice))
+        self.addMessage(DeadMessage(DM_OUTGOING, outgoing))
 
     def addMessage(self, message):
         if len(self.messages) == 256:

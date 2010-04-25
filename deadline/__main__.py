@@ -10,10 +10,8 @@ due to their implementation of the POSIX select() function"""
 
 # Import all required stuff
 from __init__ import *
+from socket import gethostbyname
 import sys
-from errno import EINTR
-from time import time, localtime
-import select
 
 # Fetch the system locale settings, so ncurses can do its job correctly
 # UTF8 strings to be precise
@@ -29,14 +27,16 @@ class Deadline(SocketMultiplexer):
     """
 
     def __init__(self):
-        SocketMultiplexer.__init__(self)
+        SocketMultiplexer.__init__(self, YeOldeIRCClient)
         self.addReader(StandardInput())
+        self.msock = None
 
     # Das Entrypoint
     def run(self):
         # Setup prompt commands
         gui.registerCommand('quit', self.quitCall)
         gui.registerCommand('connect', self.connectCall)
+        gui.registerCommand('raw', self.rawCall)
 
         # Initialize main window
         mainwin = gui.getMainWindow()
@@ -61,7 +61,21 @@ class Deadline(SocketMultiplexer):
         self.stopMultiplex()
 
     def connectCall(self, server):
-        pass
+        ip = gethostbyname(server)
+        self.connect(ip, 6667)
+
+    def rawCall(self, cmd):
+        self.msock.sendRaw(cmd)
+
+    def debugSendRaw(self, cmd):
+        gui.getMainWindow().addOutgoing(cmd)
+        gui.stdscr.touchwin()
+        gui.redrawFromScratch()
+
+    def debugRecvRaw(self, cmd):
+        gui.getMainWindow().addIncoming(cmd)
+        gui.stdscr.touchwin()
+        gui.redrawFromScratch()
 
 class StandardInput(object):
     """

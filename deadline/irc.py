@@ -2,86 +2,38 @@
 import socket
 import errno
 
+from events import DeferredCall
+from mulsoc import ManagedSocket
+
 # Currently IPv4 only
-class YeOldeIRCClient(object):
-    def __init__(self, servername):
-        self.server = servername
+class YeOldeIRCClient(ManagedSocket):
+    def onConnect(self):
+        self.muxer.eq.scheduleEvent(DeferredCall(2.5, self.sendOpening))
+        self.muxer.msock = self
+        self.stream = ''
 
-        # Connection settings
-        self.connected = False
-        self.ip = None
-        self.sock = None
-        self.doConnect()
+    def sendOpening(self):
+        self.sendRaw('USER deadline * 8: Deadline IRC')
+        self.sendRaw('NICK hoi')
+        self.muxer.eq.scheduleEvent(DeferredCall(3.0, self.sendJoin,
+            channel = '#deadline'))
 
-        # Transfer settings
-        self.sendbuf = ''
-        self.recvbuf = ''
+    def sendRaw(self, cmd):
+        self.send(cmd + '\r\n')
+        self.muxer.debugSendRaw(cmd)
 
-    def doConnect(self):
-        if self.connected:
-            return False
-        if self.ip is None:
-            self.ip = socket.gethostbyname(self.server)
-        if self.sock is None:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sock.setblocking(0)
-        try:
-            if self.sock.connect((self.ip, 6667)) is None:
-                self.connected = True
-        except socket.error, e:
-            if e.errno != errno.EINPROGRESS:
-                raise e
-        return True
+    def onRecv(self, data):
+        self.stream += data
+        i = self.stream.find('\r\n')
+        while i > -1:
+            cmd = self.stream[:i]
+            self.stream = self.stream[i + 2:]
+            self.onRecvRaw(cmd)
+            i = self.stream.find('\r\n')
 
-    def isConnected(self):
-        self.handleRecv()
-        return self.connected
+    def onRecvRaw(self, cmd):
+        self.muxer.debugRecvRaw(cmd)
 
-    def getSocket(self):
-        return self.sock
-
-    def handleSend(self):
-        if not self.connected:
-            return False
-        if len(self.sendbuf):
-            try:
-                x = self.sock.send(self.sendbuf)
-                self.sendbuf = self.sendbuf[x:]
-                return True
-            except socket.error, e:
-                if e.errno != errno.EWOULDBLOCK:
-                    raise e
-                return True
-        return False
-
-    def sendCommand(self, data):
-        self.sendbuf += data + "\r\n"
-        return self.handleSend()
-
-    def handleRecv(self):
-        if not self.connected:
-            return False
-        try:
-            x = self.sock.recv(4096)
-        except socket.error, e:
-            if e.errno != errno.EWOULDBLOCK:
-                raise e
-            return False
-        if not len(x):
-            self.sock.close()
-            del self.sock
-            self.sock = None
-            self.connected = False
-            return False
-        self.recvbuf += x
-        return True
-
-    def recvCommand(self):
-        self.handleRecv()
-        i = self.recvbuf.find('\r\n')
-        if i >= 0:
-            com = self.recvbuf[:i]
-            self.recvbuf = self.recvbuf[i + 2:]
-            return com
-        return None
+    def sendJoin(self, channel):
+        self.sendRaw('JOIN :%s' % channel)
 
