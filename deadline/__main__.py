@@ -71,11 +71,13 @@ class Deadline(SocketMultiplexer):
         gui.getMainWindow().addOutgoing(cmd)
         gui.stdscr.touchwin()
         gui.redrawFromScratch()
+        gui.stdscr.refresh()
 
     def debugRecvRaw(self, cmd):
         gui.getMainWindow().addIncoming(cmd)
         gui.stdscr.touchwin()
         gui.redrawFromScratch()
+        gui.stdscr.refresh()
 
 class StandardInput(object):
     """
