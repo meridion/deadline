@@ -5,6 +5,9 @@ from time import time, localtime
 
 # The deadline ncurses interface is heavily based on the irssi chat client
 class DeadGUI(object):
+    PROMPT_HISTORY_SIZE = 512
+    PROMPT_BLOCK_SIZE = 4096
+
     def __init__(self):
         self.visible = False
         self.stdscr = None
@@ -12,6 +15,14 @@ class DeadGUI(object):
         self.command = {}
         self.main_window = self.createWindow("Main")
         self.current_window = 0
+
+        # Setup prompt
+        self.prompt = "[Main]"
+        self.string = ""
+        self.position = 0
+        self.view = 0
+        self.history = []
+        self.tmphistory = []
 
     def show(self):
         """
@@ -69,18 +80,19 @@ class DeadGUI(object):
             curses.KEY_PREVIOUS : self.promptLeft,
             curses.KEY_PPAGE : self.scrollUp,
             curses.KEY_NPAGE : self.scrollDown,
+
+            # General control keys
             ord(curses.ascii.ctrl('N')) : self.promptRight,
             ord(curses.ascii.ctrl('P')) : self.promptLeft,
 
-            # Carriage return
-            ord('\r') : self.promptExecute
-        }
+            # Backspace variations
+            ord(curses.ascii.ctrl('H')) : self.promptBackspace,
+            ord(curses.ascii.ctrl('?')) : self.promptBackspace,
 
-        # Setup prompt
-        self.prompt = "[Main]"
-        self.string = ""
-        self.position = 0
-        self.view = 0
+            # Carriage return variations
+            ord('\r') : self.promptExecute,
+            ord(curses.ascii.ctrl('J')) : self.promptExecute
+        }
 
         # Initialize the display
         self.stdscr.clear()
@@ -122,7 +134,8 @@ class DeadGUI(object):
         try:
             self.special[c]()
         except KeyError:
-            self.promptInput(chr(c))
+            if c < 256:
+                self.promptInput(chr(c))
         self.stdscr.refresh()
         return True
 
@@ -148,6 +161,8 @@ class DeadGUI(object):
             self.view)
 
     def promptInput(self, x):
+        if len(self.string) == PROMPT_BLOCK_SIZE:
+            return
         self.string = self.string[:self.position] + x + \
             self.string[self.position:]
         self.position += 1;
@@ -191,6 +206,19 @@ class DeadGUI(object):
             else:
                 self.stdscr.move(self.height - 1, len(self.prompt) + 1 +
                     self.position - self.view)
+
+    def promptUp(self):
+        """
+            Scrolls up in the prompt history.
+        """
+        pass
+
+    def promptDown(self):
+        """
+            Scrolls down in the prompt history.
+        """
+        if self.string:
+            
 
     # Verify that the prompt is in a displayable state
     # If it is not, fix it and return True, otherwise return False
