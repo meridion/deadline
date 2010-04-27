@@ -15,7 +15,7 @@ class DeadGUI(object):
 
     def show(self):
         """
-Show the deadline ncurses GUI.
+            Show the deadline ncurses GUI.
         """
         if self.visible:
             return False
@@ -32,7 +32,7 @@ Show the deadline ncurses GUI.
 
     def hide(self):
         """
-Go back to the normal terminal.
+            Go back to the normal terminal.
         """
         if not self.visible:
             return False
@@ -62,6 +62,8 @@ Go back to the normal terminal.
             curses.KEY_DC : self.promptBackspace,
             curses.KEY_LEFT : self.promptLeft,
             curses.KEY_RIGHT : self.promptRight,
+            curses.KEY_UP : self.promptUp,
+            curses.KEY_DOWN : self.promptDown,
             curses.KEY_ENTER : self.promptExecute,
             curses.KEY_NEXT : self.promptRight,
             curses.KEY_PREVIOUS : self.promptLeft,
@@ -71,7 +73,7 @@ Go back to the normal terminal.
             ord(curses.ascii.ctrl('P')) : self.promptLeft,
 
             # Carriage return
-            13 : self.promptExecute
+            ord('\r') : self.promptExecute
         }
 
         # Setup prompt
@@ -127,7 +129,7 @@ Go back to the normal terminal.
     # Prompt functionality
     def promptFromScratch(self):
         """
-Redraws the prompt from scratch.
+            Redraws the prompt from scratch.
         """
         # Draw prompt message
         self.stdscr.addstr(self.height - 1, 0, self.prompt)
@@ -212,7 +214,7 @@ Redraws the prompt from scratch.
 
     def promptExecute(self):
         """
-Executes the command typed into the prompt.
+            Executes the command typed into the prompt.
         """
         if len(self.string):
             if self.string[0] == '/' and len(self.string) > 1:
@@ -235,7 +237,7 @@ Executes the command typed into the prompt.
 
     def promptClear(self):
         """
-Clear the contents of the prompt.
+            Clear the contents of the prompt.
         """
         self.string = ""
         self.position = 0
@@ -250,7 +252,6 @@ Clear the contents of the prompt.
         amount = max((self.height - 3) / 2, 1)
         self.windows[self.current_window].scrollMessageArea(amount)
         self.redrawFromScratch()
-
 
 TITLE_MODE_CENTERED, TITLE_MODE_LEFT, TITLE_MODE_RIGHT = range(3)
 
@@ -349,7 +350,7 @@ class DeadWindow(object):
             h = 0
             msg = len(self.messages) - 1 
             while h < self.height - 2:
-                
+
                 # The window is not yet completely filled
                 # scrolling is meaningless
                 if msg == -1:
@@ -448,13 +449,13 @@ class DeadMessage(object):
 
     def breakString(self, text, width):
         """
-Function helper for building text wrappers.
+            Function helper for building text wrappers.
 
-'text' should contain a string to be wrapped, and
-'width' should be the target width the textbox will be.
+            'text' should contain a string to be wrapped, and
+            'width' should be the target width the textbox will be.
 
-The function shall return a tuple containing the string
-to be displayed and the remainder.
+            The function shall return a tuple containing the string
+            to be displayed and the remainder.
         """
 
         if width > len(text):
@@ -481,7 +482,8 @@ to be displayed and the remainder.
 
     def getRenderSpec(self, width):
         """
-Compute how many lines of text this message will take for the given width
+            Compute how many lines of text this message will take
+            for the given width.
         """
         lines = 1
         prebreak = self.content
@@ -500,7 +502,7 @@ Compute how many lines of text this message will take for the given width
 
     def render(self, gui, y, x, height, width, startline):
         """
-Render a message object to the GUI
+            Render a message object to the GUI.
         """
         prebreak = self.content
         broken, rest = self.breakString(prebreak,
