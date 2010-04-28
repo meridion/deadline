@@ -20,9 +20,23 @@ class DeadGUI(object):
         self.prompt = "[Main]"
         self.string = ""
         self.position = 0
+        self.hposition = 0
         self.view = 0
+
+        # History is stored into a tuple
+        # (string, position, view, tmp_history)
+        # tmp_history is either None or a tuple containing another
+        # (string, position, view), which describes a temporary state
+        # of history
         self.history = []
+
+        # This list contains the indexes of items that gained a temporary
+        # history and therefore need to be set to None again.
         self.tmphistory = []
+
+        # Contains the amount of non-existent history items at the end of the
+        # history list that need to be deleted.
+        self.hdestroy = 0
 
     def show(self):
         """
@@ -161,7 +175,8 @@ class DeadGUI(object):
             self.view)
 
     def promptInput(self, x):
-        if len(self.string) == PROMPT_BLOCK_SIZE:
+        self.hdirty = True
+        if len(self.string) == DeadGUI.PROMPT_BLOCK_SIZE:
             return
         self.string = self.string[:self.position] + x + \
             self.string[self.position:]
@@ -177,6 +192,7 @@ class DeadGUI(object):
                 self.position - self.view)
 
     def promptBackspace(self):
+        self.hdirty = True
         if self.position != 0:
             self.string = self.string[:self.position - 1] + \
                 self.string[self.position:]
@@ -207,18 +223,69 @@ class DeadGUI(object):
                 self.stdscr.move(self.height - 1, len(self.prompt) + 1 +
                     self.position - self.view)
 
+    def readHistory(self):
+        """
+            Reads current selected history.
+        """
+
+        hist = self.history[self.hposition]
+        thist = hist[3]
+        if thist is not None:
+            hist = thist
+        else:
+            hist = hist[:3]
+        self.string, self.position, self.view = hist
+        self.hdirty = False
+
+    def writeHistory(self):
+        """
+            Writes current selected history.
+        """
+
+        if self.hdirty:
+            hist = list(self.history[self.hposition])
+            hist[3] = (self.string, self.position, self.view)
+            self.history[self.hposition] = tuple(hist)
+            self.hdirty = False
+
     def promptUp(self):
         """
             Scrolls up in the prompt history.
         """
-        pass
+
+        if self.hposition > 0:
+            if self.hposition == len(self.history):
+                if self.string:
+                    self.hdestroy += 1
+                    self.history.append((self.string, self.position,
+                        self.view, None))
+                self.hposition -= 1
+                self.readHistory()
+            else:
+                self.writeHistory()
+                self.hposition -= 1
+                self.readHistory()
+            self.promptFromScratch()
 
     def promptDown(self):
         """
             Scrolls down in the prompt history.
         """
-        if self.string:
-            
+
+        if self.hposition >= len(self.history) - 1:
+            if self.string:
+                self.hdestroy += 1
+                self.hposition += 1
+                self.history.append((self.string, self.position,
+                    self.view, None))
+                self.string, self.position, self.view = '', 0, 0
+                self.hdirty = False
+                self.promptFromScratch()
+        else:
+            self.writeHistory()
+            self.hposition += 1
+            self.readHistory()
+            self.promptFromScratch()
 
     # Verify that the prompt is in a displayable state
     # If it is not, fix it and return True, otherwise return False
@@ -260,6 +327,17 @@ class DeadGUI(object):
                         addNotice("Unknown command '%s'" % cmd[1:])
             else:
                 self.getMainWindow().addNotice(self.string)
+
+            if self.hdestroy:
+                self.history = self.history[:-self.hdestroy]
+
+            for i in self.tmphistory:
+                x = list(self.history[i])
+                x[3] = None
+                self.history[i] = tuple(x)
+
+            self.history.append((self.string, self.position, 0, None))
+            self.hposition = len(self.history)
             self.promptClear()
             self.redrawFromScratch()
 
