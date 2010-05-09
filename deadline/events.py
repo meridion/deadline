@@ -67,7 +67,7 @@ class DeferredCall(DeadEvent):
 		a given period of time.
 	"""
 
-	def __init__(self, call, delay, **args):
+	def __init__(self, delay, call, **args):
 		DeadEvent.__init__(self, delay)
 		self.args = args
 		self.call = call
@@ -145,11 +145,11 @@ class DeadEventQueue(object):
 
 		# Do elapse
 		self.elapsing = True
-		while self.events[0].elapseTime(time):
+		while len(self.events) and self.events[0].elapseTime(time, self):
 			heappop(self.events)
-		for ev in self.events[1:]: ev.elapseTime(time)
+		for ev in self.events[1:]: ev.elapseTime(time, self)
 		self.elapsing = False
-
+ 
 		# Insert events scheduled in the mean time
 		for ev in self.scheds: self.scheduleEvent(ev)
 		for ev in self.cancels: self.cancelEvent(ev)
