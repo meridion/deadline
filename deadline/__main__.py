@@ -54,6 +54,8 @@ class Deadline(SocketMultiplexer):
 			Handles SIGWINCH for terminal resizing.
 		"""
 		gui.stdscr.touchwin()
+		while gui.inputEvent():
+			pass
 
 	def quitCall(self, str):
 		self.stopMultiplex()
