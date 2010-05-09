@@ -16,6 +16,7 @@ class DeadEvent(object):
 	"""
 
 	def __init__(self, delay):
+		delay = float(delay)
 		self.delay = delay
 		self.odelay = delay
 
@@ -159,7 +160,14 @@ class DeadEventQueue(object):
 		"""
 			Returns the ticks remaining till the next event.
 		"""
+
+		# Guarantee heap structure
+		if not self.isheap:
+			heapify(self.events)
+			self.isheap = True
+
 		if len(self.events):
 			return self.events[0].getDelay()
+
 		return None
 

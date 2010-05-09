@@ -10,6 +10,7 @@ import socket
 from select import select, error as select_error
 from time import time
 import errno
+from events import DeadEventQueue, DeferredCall
 
 class SocketMultiplexer(object):
 	"""
@@ -30,18 +31,17 @@ class SocketMultiplexer(object):
 			This class represents the occurrence of a deadlock in the event
 			processing system. (It would wait forever on nothing)
 		"""
-		pass
 
 	def __init__(self, sock = None):
 		"""
-			Iinitialize a base SocketMultiplexer that uses 'sock' as its
+			Initialize a base SocketMultiplexer that uses 'sock' as its
 			ManagedSocket instantiator.
 		"""
 		self.keep_running = False
 		if sock is None:
 			sock = ManagedSocket
 		self.sock = sock
-		self.alarm = None
+		self.eq = DeadEventQueue()
 		self.reads, self.writes = [], []
 
 	def startMultiplex(self):
@@ -57,33 +57,29 @@ class SocketMultiplexer(object):
 		while self.keep_running:
 			try:
 
-				# Handle the alarm
-				if self.alarm is None:
+				# Handle the events system
+				if self.eq.nextEventTicks() is None:
 					tick = None
 				elif tick is None:
 					tick = time()
 				else:
 					newtick = time()
 					if newtick - tick > 0.0:
-						self.alarm -= newtick - tick
+						self.eq.elapseTime(newtick - tick)
 					tick = newtick
 					del newtick
-
-					if self.alarm - 0.001 <= 0.0:
-						self.alarm = None
-						self.tick = None
-						self.onAlarm()
 
 				# Guard against activity deadlocks
 				# They really shouldn't occur, but it is good practice to
 				# catch them.
 				if len(self.reads) + len(self.writes) == 0 and \
-						self.alarm is None:
+						self.eq.nextEventTicks() is None:
 					raise SocketMultiplexer.Deadlock("No events left")
 
 				# Wait for activity
 				reads, writes, excepts = \
-					select(self.reads, self.writes, [], self.alarm)
+					select(self.reads, self.writes, [], self.nextEventTicks())
+
 			except select_error, e:
 				if e.errno == errno.EINTR:
 					continue
@@ -105,22 +101,43 @@ class SocketMultiplexer(object):
 		self.keep_running = False
 		return True
 
-	def connect(self, ip, port):
+	def connect(self, ip, port, **keywords):
 		"""
-			Initiate a client connection to the specified server
+			Initiate a client connection to the specified server.
+
+			Additionally you can specify 'sock = <some class' in the
+			function call to override the default socket instantiator.
+			Any additional keywords shall be passed on to
+			the socket constructor.
 		"""
-		new = self.sock(self, ip, port)
+		try:
+			sock = keywords['sock']
+			del keywords['sock']
+		except KeyError:
+			sock = self.sock
+		new = sock(self, ip, port, **keywords)
 		new.connect()
 		return True
 
 	def listen(self, ip, port,
-			queue_length = None):
+			queue_length = None, **keywords):
 		"""
 			Create a new socket that will start listening on
-			the specified address
+			the specified address.
+
+			Additionally you can specify 'sock = <some class' in the
+			function call to override the default socket instantiator.
+			Any additional keywords shall be passed on to
+			the socket constructor.
 		"""
 		if queue_length == None:
 			queue_length = SocketMultiplexer.LISTEN_QUEUE_DEFAULT
+		try:
+			sock = keywords['sock']
+			del keywords['sock']
+		except KeyError:
+			sock = self.sock
+		new = sock(self, ip, port, **keywords)
 		new = self.sock(self, ip, port)
 		if not new.listen(queue_length):
 			return False
@@ -169,8 +186,19 @@ class SocketMultiplexer(object):
 			Sets an alarm that will occur in 'seconds' time, seconds may be
 			fractional. If seconds is None any pending alarm will be cancelled
 		"""
-		self.alarm = float(seconds)
+
+		if self.alarm is not None:
+			self.eq.cancelEvent(self.alarm)
+		self.alarm = DeferredCall(seconds, self.execAlarm)
+		self.eq.scheduleEvent(self.alarm)
 		return True
+
+	def execAlarm(self):
+		"""
+			Handler that executes the onAlarm() method.
+		"""
+		self.alarm = None
+		self.onAlarm()
 
 	def onAlarm(self):
 		"""
@@ -237,7 +265,8 @@ class ManagedSocket(object):
 		try:
 			self.sock.listen(queue_length)
 		except socket.error, e:
-			if e.errno != EADDRINUSE:
+			error = e.args[0]
+			if error != EADDRINUSE:
 				raise e
 			return False
 		self.muxer.addReader(self)
@@ -276,13 +305,14 @@ class ManagedSocket(object):
 			self.muxer.addReader(self)
 			self.muxer.delWriter(self)
 		except socket.error, e:
-			if e.errno == errno.ECONNREFUSED:
+			error = e.args[0]
+			if error == errno.ECONNREFUSED:
 				self.state = ManagedSocket.DISCONNECTED
 				self.onConnectionRefuse()
 				return False
-			elif e.errno == errno.EAGAIN:
+			elif error == errno.EAGAIN:
 				return False
-			elif e.errno != errno.EINPROGRESS:
+			elif error != errno.EINPROGRESS:
 				raise e
 		return True
 
@@ -301,7 +331,8 @@ class ManagedSocket(object):
 						break
 					data += d
 			except socket.error, e:
-				if e.errno != errno.EWOULDBLOCK and e.errno != errno.EINTR:
+				error = e.args[0]
+				if error != errno.EWOULDBLOCK and error != errno.EINTR:
 					raise e
 
 			if data != '':
@@ -320,7 +351,8 @@ class ManagedSocket(object):
 					conn, addr = self.sock.accept()
 					self.onAccept(type(self)(self.muxer, conn, addr))
 			except socket.error, e:
-				if e.errno != errno.EWOULDBLOCK and e.errno != errno.EINTR:
+				error = e.args[0]
+				if error != errno.EWOULDBLOCK and error != errno.EINTR:
 					raise e
 
 			return True
@@ -343,16 +375,18 @@ class ManagedSocket(object):
 				x = self.sock.send(self.wbuf[:4096])
 				self.wbuf = self.wbuf[x:]
 			except socket.error, e:
+				error = e.args[0]
+
 				# Connection lost
-				if e.errno == errno.EPIPE:
+				if error == errno.EPIPE:
 					self.state = ManagedSocket.DISCONNECTED
 					self.onDisconnect()
 					self.wbuf = ''
-				elif e.errno == errno.EWOULDBLOCK:
+				elif error == errno.EWOULDBLOCK:
 					if not self.lwb:
 						self.lwb = True
 						self.muxer.addWriter(self)
-				elif e.errno != errno.EINTR:
+				elif error != errno.EINTR:
 					raise e
 				break
 
@@ -388,7 +422,8 @@ class ManagedSocket(object):
 			try:
 				self.sock.shutdown(socket.SHUT_RDWR)
 			except socket.error, e:
-				if e.errno != ENOTCONN:
+				error = e.args[0]
+				if error != ENOTCONN:
 					raise e
 
 			self.muxer.delReader(self)
