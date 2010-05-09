@@ -42,6 +42,7 @@ class SocketMultiplexer(object):
 			sock = ManagedSocket
 		self.sock = sock
 		self.eq = DeadEventQueue()
+		self.alarm = None
 		self.reads, self.writes = [], []
 
 	def startMultiplex(self):
