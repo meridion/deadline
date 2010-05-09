@@ -78,10 +78,12 @@ class SocketMultiplexer(object):
 
 				# Wait for activity
 				reads, writes, excepts = \
-					select(self.reads, self.writes, [], self.nextEventTicks())
+					select(self.reads, self.writes, [],
+						self.eq.nextEventTicks())
 
 			except select_error, e:
-				if e.errno == errno.EINTR:
+				if e.args[0] == errno.EINTR:
+					self.onSignal()
 					continue
 				self.keep_running = False
 				raise e
@@ -204,7 +206,11 @@ class SocketMultiplexer(object):
 		"""
 			Called when the alarm set by setAlarm() occurs
 		"""
-		pass
+
+	def onSignal(self):
+		"""
+			Called when select() is interrupted by a signal.
+		"""
 
 class ManagedSocket(object):
 	"""

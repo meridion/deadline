@@ -34,8 +34,9 @@ Method called when event occurs.
 			Elapse 'time' units of time.
 			If the event is triggered the function returns True
 		"""
+
 		self.delay -= time
-		if self.delay <= 0.0:
+		if self.delay <= 0.001:
 			self.trigger(eq)
 			return True
 		return False
