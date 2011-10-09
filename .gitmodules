@@ -1,0 +1,3 @@
+[submodule "deadline/mulsoc"]
+	path = deadline/mulsoc
+	url = git@github.com:meridion/mulsoc.git

@@ -2,8 +2,7 @@
 import socket
 import errno
 
-from events import DeferredCall
-from mulsoc import ManagedSocket
+from mulsoc import ManagedSocket, DeferredCall
 
 # Currently IPv4 only
 class YeOldeIRCClient(ManagedSocket):
