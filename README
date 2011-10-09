@@ -8,7 +8,7 @@ it is not meant to be used on a large scale, but time will tell were it will
 end up.
 
 One of the characterstics of deadline is its ncurses user interface which was
-boldy copied from the irssi IRC client. Deadline also supports the dynamic
+boldly copied from the irssi IRC client. Deadline also supports the dynamic
 loading of components, and is completely based on non-blocking IO. At the time
 of writing the only blocking part is the host name lookup, but I think we will
 get that out too with not too much trouble.
