@@ -5,6 +5,10 @@ from time import time, localtime
 
 # The deadline ncurses interface is heavily based on the irssi chat client
 class DeadGUI(object):
+    """
+        Deadine GUI interface v0.1
+    """
+
     PROMPT_HISTORY_SIZE = 512
     PROMPT_BLOCK_SIZE = 4096
 
@@ -15,6 +19,8 @@ class DeadGUI(object):
         self.command = {}
         self.main_window = self.createWindow("Main")
         self.current_window = 0
+
+        self.onNoExecute = None
 
         # Setup prompt
         self.prompt = "[Main]"
@@ -78,6 +84,10 @@ class DeadGUI(object):
         return win
 
     def __ncurses_init__(self):
+        """
+            Setup ncurses library.
+        """
+
         # Setup input handler
         self.stdscr.nodelay(1)
         self.special = {
@@ -108,7 +118,7 @@ class DeadGUI(object):
             ord(curses.ascii.ctrl('J')) : self.promptExecute
         }
 
-        # Initialize the display
+        # Initialise the display
         self.stdscr.clear()
         self.height, self.width = self.stdscr.getmaxyx()
         curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_RED)
@@ -116,11 +126,11 @@ class DeadGUI(object):
         curses.init_pair(3, curses.COLOR_YELLOW, -1)
         curses.init_pair(4, curses.COLOR_BLUE, -1)
         curses.init_pair(5, curses.COLOR_RED, -1)
-        self.infobarcolor = curses.A_DIM | curses.color_pair(1)
-        self.infohookcolor = curses.A_DIM | curses.color_pair(2)
-        self.noticecolor = curses.A_DIM | curses.color_pair(3)
-        self.incomingcolor = curses.A_DIM | curses.color_pair(4)
-        self.outgoingcolor = curses.A_DIM | curses.color_pair(5)
+        self.infobarcolour = curses.A_DIM | curses.color_pair(1)
+        self.infohookcolour = curses.A_DIM | curses.color_pair(2)
+        self.noticecolour = curses.A_DIM | curses.color_pair(3)
+        self.incomingcolour = curses.A_DIM | curses.color_pair(4)
+        self.outgoingcolour = curses.A_DIM | curses.color_pair(5)
         self.redrawFromScratch()
         self.stdscr.refresh()
 
@@ -156,8 +166,9 @@ class DeadGUI(object):
     # Prompt functionality
     def promptFromScratch(self):
         """
-            Redraws the prompt from scratch.
+            Redraws the prompt entirely.
         """
+
         # Draw prompt message
         self.stdscr.addstr(self.height - 1, 0, self.prompt)
         self.stdscr.addstr(self.height - 1, len(self.prompt) + 1,
@@ -175,6 +186,10 @@ class DeadGUI(object):
             self.view)
 
     def promptInput(self, x):
+        """
+            Input a single character to the prompt.
+        """
+
         self.hdirty = True
         if len(self.string) == DeadGUI.PROMPT_BLOCK_SIZE:
             return
@@ -192,6 +207,10 @@ class DeadGUI(object):
                 self.position - self.view)
 
     def promptBackspace(self):
+        """
+            Execute a backspace movement in the prompt.
+        """
+
         self.hdirty = True
         if self.position != 0:
             self.string = self.string[:self.position - 1] + \
@@ -206,6 +225,10 @@ class DeadGUI(object):
                     1 + self.position - self.view)
 
     def promptLeft(self):
+        """
+            Tries to move the prompt cursor to the left.
+        """
+
         if self.position != 0:
             self.position -= 1
             if self.promptValidate():
@@ -215,6 +238,10 @@ class DeadGUI(object):
                     self.position - self.view)
 
     def promptRight(self):
+        """
+            Tries to move the prompt cursor to the right.
+        """
+
         if self.position != len(self.string):
             self.position += 1
             if self.promptValidate():
@@ -244,6 +271,8 @@ class DeadGUI(object):
 
         if self.hdirty:
             hist = list(self.history[self.hposition])
+            if hist[3] is None:
+                self.tmphistory.append(self.hposition)
             hist[3] = (self.string, self.position, self.view)
             self.history[self.hposition] = tuple(hist)
             self.hdirty = False
@@ -257,8 +286,8 @@ class DeadGUI(object):
             if self.hposition == len(self.history):
                 if self.string:
                     self.hdestroy += 1
-                    self.history.append((self.string, self.position,
-                        self.view, None))
+                    self.history.append((None, None, None, (self.string,
+                        self.position, self.view)))
                 self.hposition -= 1
                 self.readHistory()
             else:
@@ -272,24 +301,32 @@ class DeadGUI(object):
             Scrolls down in the prompt history.
         """
 
-        if self.hposition >= len(self.history) - 1:
+        if self.hposition == len(self.history):
             if self.string:
                 self.hdestroy += 1
                 self.hposition += 1
-                self.history.append((self.string, self.position,
-                    self.view, None))
+                self.history.append((None, None, None, (self.string,
+                    self.position, self.view)))
                 self.string, self.position, self.view = '', 0, 0
                 self.hdirty = False
                 self.promptFromScratch()
         else:
             self.writeHistory()
             self.hposition += 1
-            self.readHistory()
+            if self.hposition != len(self.history):
+                self.readHistory()
+            else:
+                self.string, self.position, self.view = '', 0, 0
             self.promptFromScratch()
 
     # Verify that the prompt is in a displayable state
     # If it is not, fix it and return True, otherwise return False
     def promptValidate(self):
+        """
+            This method adjusts the self.view parameter to such an extent
+            that the prompt can be rendered correctly.
+        """
+
         # If we scroll too much to left (or backspace)
         # We need the terminal to scroll the text
         # View defines how much our text is scrolled
@@ -311,6 +348,7 @@ class DeadGUI(object):
         """
             Executes the command typed into the prompt.
         """
+
         if len(self.string):
             if self.string[0] == '/' and len(self.string) > 1:
                 s = self.string.find(' ')
@@ -326,18 +364,37 @@ class DeadGUI(object):
                     self.getMainWindow(). \
                         addNotice("Unknown command '%s'" % cmd[1:])
             else:
-                self.getMainWindow().addNotice(self.string)
+                execret = True
+                if self.onNoExecute is not None:
+                    execret = self.onNoExecute(self.string)
+                if execret:
+                    self.getMainWindow().addNotice(self.string)
 
+            # The following to blocks of code reset the prompt history
+            # to its after-modification mode.
+
+            # This deletes any added temporal lines by promptDown'ing
+            # beyond the prompt history
             if self.hdestroy:
                 self.history = self.history[:-self.hdestroy]
 
+            # This deletes any temporal edit changes made to various
+            # history lines.
             for i in self.tmphistory:
                 x = list(self.history[i])
                 x[3] = None
                 self.history[i] = tuple(x)
 
-            self.history.append((self.string, self.position, 0, None))
+            # Store the executed statement in history.
+            if len(self.history) == DeadGUI.PROMPT_HISTORY_SIZE:
+                self.history.pop(0)
+            self.view = 0
+            self.position = len(self.string)
+            self.promptValidate()
+            self.history.append((self.string, self.position, self.view, None))
             self.hposition = len(self.history)
+
+            # Prepare the prompt for a new line.
             self.promptClear()
             self.redrawFromScratch()
 
@@ -345,6 +402,7 @@ class DeadGUI(object):
         """
             Clear the contents of the prompt.
         """
+
         self.string = ""
         self.position = 0
         self.view = 0
@@ -358,6 +416,7 @@ class DeadGUI(object):
         amount = max((self.height - 3) / 2, 1)
         self.windows[self.current_window].scrollMessageArea(amount)
         self.redrawFromScratch()
+
 
 TITLE_MODE_CENTERED, TITLE_MODE_LEFT, TITLE_MODE_RIGHT = range(3)
 
@@ -413,7 +472,7 @@ class DeadWindow(object):
             pos = self.width / 2 - len(self.title) / 2
             str = ' ' * pos + self.title + ' ' * \
                 (self.width - pos - len(self.title))
-        gui.stdscr.addstr(self.y, self.x, str, gui.infobarcolor)
+        gui.stdscr.addstr(self.y, self.x, str, gui.infobarcolour)
 
     def drawMessageArea(self, gui):
         if self.scroll is None:
@@ -523,31 +582,31 @@ class DeadWindow(object):
 
         # Infobar
         gui.stdscr.addch(self.y + self.height - 1, self.x,
-            ' ', gui.infobarcolor)
+            ' ', gui.infobarcolour)
 
         # Clock
         clock = localtime()
         clockstr = "%(hour)02d:%(min)02d" % \
             {"hour" : clock.tm_hour, "min" : clock.tm_min}
         gui.stdscr.addch(self.y + self.height - 1, self.x + 1,
-            '[', gui.infohookcolor)
+            '[', gui.infohookcolour)
         gui.stdscr.addstr(self.y + self.height - 1, self.x + 2,
-            clockstr, gui.infobarcolor)
+            clockstr, gui.infobarcolour)
         gui.stdscr.addch(self.y + self.height - 1, self.x + 7,
-            ']', gui.infohookcolor)
+            ']', gui.infohookcolour)
 
         # Infobar
         gui.stdscr.addstr(self.y + self.height - 1, self.x + 8,
-            ' ' * (self.width - 8), gui.infobarcolor)
+            ' ' * (self.width - 8), gui.infobarcolour)
 
         if self.more:
             gui.stdscr.addstr(self.y + self.height - 1, self.width - 11,
-                '-- more --', gui.infobarcolor)
+                '-- more --', gui.infobarcolour)
 
 DM_RAW, DM_NOTICE, DM_CHAT, DM_INCOMING, DM_OUTGOING = range(5)
 
 class DeadMessage(object):
-    def __init__(self, type = DM_RAW, content = "You're code is bugged ;-)"):
+    def __init__(self, type = DM_RAW, content = "Your code is bugged ;-)"):
         self.timestamp = time()
         self.type = type
         self.content = content
@@ -619,11 +678,11 @@ class DeadMessage(object):
                 {"hour" : clock.tm_hour, "min" : clock.tm_min}
             gui.stdscr.addstr(y, x, clockstr)
             if self.type == DM_NOTICE:
-                gui.stdscr.addstr(y, x + 6, '-- ', gui.noticecolor)
+                gui.stdscr.addstr(y, x + 6, '-- ', gui.noticecolour)
             elif self.type == DM_INCOMING:
-                gui.stdscr.addstr(y, x + 6, '>> ', gui.incomingcolor)
+                gui.stdscr.addstr(y, x + 6, '>> ', gui.incomingcolour)
             elif self.type == DM_OUTGOING:
-                gui.stdscr.addstr(y, x + 6, '<< ', gui.outgoingcolor)
+                gui.stdscr.addstr(y, x + 6, '<< ', gui.outgoingcolour)
             else:
                 gui.stdscr.addstr(y, x + 6, '** ')
             gui.stdscr.addstr(y, x + self.prefix_length, broken)
